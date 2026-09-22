@@ -23,7 +23,7 @@ test("непереданное значение не превращается в
 /** Словари обязаны совпадать ключ в ключ, иначе на чужом языке будет дыра. */
 test("во всех языках одинаковый набор ключей", () => {
   setLang("ru");
-  const keys = ["tooSmall.title", "tooSmall.need", "tooSmall.how", "hint.bar"] as const;
+  const keys = ["tooSmall.title", "tooSmall.need", "tooSmall.how", "key.help", "key.quit"] as const;
   for (const lang of LANGS) {
     setLang(lang.id);
     for (const key of keys) {

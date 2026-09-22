@@ -22931,7 +22931,13 @@ var init_i18n = __esm({
       "empty.auth": "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login",
       "player.nothing": "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442",
       "player.live": "\u044D\u0444\u0438\u0440",
-      "hint.bar": "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 f \u2014 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434",
+      "key.commands": "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B",
+      "key.panels": "Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438",
+      "key.list": "j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A",
+      "key.play": "Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C",
+      "key.favourite": "f \u2014 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+      "key.help": "? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C",
+      "key.quit": "q \u2014 \u0432\u044B\u0445\u043E\u0434",
       "hint.radioInfo": "\u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438",
       "hint.loading": "\u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026",
       "hint.back": "Esc \u043D\u0430\u0437\u0430\u0434",
@@ -23004,7 +23010,13 @@ var init_i18n = __esm({
       "empty.auth": "Sign in first \u2014 type /login",
       "player.nothing": "Nothing is playing",
       "player.live": "live",
-      "hint.bar": "/ \u2014 commands \xB7 Tab \u2014 panels \xB7 j/k \u2014 list \xB7 Enter \u2014 play \xB7 f \u2014 favourite \xB7 ? \u2014 help \xB7 q \u2014 quit",
+      "key.commands": "/ \u2014 commands",
+      "key.panels": "Tab \u2014 panels",
+      "key.list": "j/k \u2014 list",
+      "key.play": "Enter \u2014 play",
+      "key.favourite": "f \u2014 favourite",
+      "key.help": "? \u2014 help",
+      "key.quit": "q \u2014 quit",
       "hint.radioInfo": "for reference only",
       "hint.loading": "loading\u2026",
       "hint.back": "Esc to go back",
@@ -23163,6 +23175,41 @@ var init_Setup = __esm({
       }
     };
     SETUP_STEPS = ["lang", "theme", "login"];
+  }
+});
+
+// src/tui/hints.ts
+function hintBar(width2) {
+  if (width2 <= 0) return "";
+  const kept = HINTS.map((hint, index) => ({ ...hint, index, text: t(hint.key) }));
+  while (kept.length > 1 && joined(kept).length > width2) {
+    let weakest = 0;
+    for (let i = 1; i < kept.length; i += 1) {
+      if (kept[i].weight > kept[weakest].weight) weakest = i;
+    }
+    kept.splice(weakest, 1);
+  }
+  return fit(joined(kept), width2);
+}
+function joined(hints) {
+  return [...hints].sort((left, right) => left.index - right.index).map((hint) => hint.text).join(SEPARATOR);
+}
+var SEPARATOR, HINTS;
+var init_hints = __esm({
+  "src/tui/hints.ts"() {
+    "use strict";
+    init_i18n();
+    init_theme();
+    SEPARATOR = " \xB7 ";
+    HINTS = [
+      { key: "key.commands", weight: 3 },
+      { key: "key.panels", weight: 6 },
+      { key: "key.list", weight: 5 },
+      { key: "key.play", weight: 4 },
+      { key: "key.favourite", weight: 7 },
+      { key: "key.help", weight: 2 },
+      { key: "key.quit", weight: 1 }
+    ];
   }
 });
 
@@ -24657,7 +24704,7 @@ function App2({
         width: width2
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: message ? theme.paused : theme.muted, children: fit(message ?? t("hint.bar"), Math.max(20, width2 - 2)) }) })
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ? fit(message, Math.max(20, width2 - 2)) : hintBar(Math.max(20, width2 - 2)) }) })
   ] });
 }
 function splitBurst(input) {
@@ -24832,6 +24879,7 @@ var init_App2 = __esm({
     init_theme();
     init_prefs();
     await init_Setup();
+    init_hints();
     init_layout();
     await init_Logo();
     await init_LevelMeter();

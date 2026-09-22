@@ -79,6 +79,7 @@ import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, tf, type La
 import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
 import { SETUP_STEPS, Setup, type SetupStep } from "./Setup.tsx";
+import { hintBar } from "./hints.ts";
 import { computeLayout } from "./layout.ts";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { LevelMeter } from "./LevelMeter.tsx";
@@ -1534,7 +1535,7 @@ export function App({
 
       <Box paddingX={1}>
         <Text color={message ? theme.paused : theme.muted}>
-          {fit(message ?? t("hint.bar"), Math.max(20, width - 2))}
+          {message ? fit(message, Math.max(20, width - 2)) : hintBar(Math.max(20, width - 2))}
         </Text>
       </Box>
     </Box>
