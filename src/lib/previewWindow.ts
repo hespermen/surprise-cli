@@ -61,3 +61,25 @@ export function previewWindow(track: PreviewTrackFields): PreviewWindow {
 
   return { startSec, durationSec: wanted, endSec: startSec + wanted };
 }
+
+/**
+ * Пора ли обрывать превью.
+ *
+ * Правило «позиция >= конца окна» само по себе неверно, и это стоило
+ * воспроизведения музыки целиком. Позиция приходит из общего состояния плеера и
+ * между загрузкой нового трека и первым его отсчётом ещё принадлежит ПРЕДЫДУЩЕМУ
+ * файлу. После часа эфира она равна тысячам секунд, а окно превью — тридцати:
+ * проверка срабатывала мгновенно, и трек обрывался, не начавшись.
+ *
+ * Поэтому обрыв возможен только после того, как мы увидели позицию ВНУТРИ окна.
+ * Дойти до конца можно лишь побывав до него.
+ */
+export function previewCutoff(
+  positionSec: number | null,
+  endSec: number | null,
+  armed: boolean,
+): { stop: boolean; armed: boolean } {
+  if (endSec === null || positionSec === null) return { stop: false, armed };
+  if (positionSec < endSec) return { stop: false, armed: true };
+  return { stop: armed, armed };
+}

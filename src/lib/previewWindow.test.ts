@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PREVIEW_FALLBACK_SEC, PREVIEW_START_RATIO, previewWindow } from "./previewWindow.ts";
+import { PREVIEW_FALLBACK_SEC, PREVIEW_START_RATIO, previewCutoff, previewWindow } from "./previewWindow.ts";
 
 test("previewWindow: по умолчанию начинается с 25% длительности", () => {
   // Первые полминуты электронного трека — интро и раскачка, по ним релиз не
@@ -57,4 +57,24 @@ test("previewWindow: гарантии держатся на всём диапа�
     );
     assert.equal(window.endSec, window.startSec + window.durationSec);
   }
+});
+
+test("previewCutoff: чужая позиция от прошлого трека не обрывает превью", () => {
+  // Регрессия, из-за которой музыка не играла вовсе. Позиция между загрузкой и
+  // первым отсчётом принадлежит ПРЕДЫДУЩЕМУ файлу: после часа эфира это тысячи
+  // секунд против тридцати секунд окна — обрыв срабатывал мгновенно.
+  assert.deepEqual(previewCutoff(3600, 84, false), { stop: false, armed: false });
+});
+
+test("previewCutoff: обрыв только после позиции внутри окна", () => {
+  // Дойти до конца можно лишь побывав до него.
+  const first = previewCutoff(54, 84, false);
+  assert.deepEqual(first, { stop: false, armed: true });
+  assert.deepEqual(previewCutoff(84, 84, first.armed), { stop: true, armed: true });
+  assert.deepEqual(previewCutoff(90, 84, first.armed), { stop: true, armed: true });
+});
+
+test("previewCutoff: без окна и без позиции ничего не происходит", () => {
+  assert.deepEqual(previewCutoff(100, null, true), { stop: false, armed: true });
+  assert.deepEqual(previewCutoff(null, 84, true), { stop: false, armed: true });
 });

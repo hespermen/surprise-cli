@@ -30,6 +30,7 @@ import {
   fetchShowStream,
   fetchTracklist,
   findShow,
+  findShowById,
   searchShows,
   type Show,
   type TracklistItem,
@@ -56,6 +57,7 @@ import { openUrl, renderQr } from "../ui/term.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
 import { getListenerId, getSessionId } from "../lib/ids.ts";
+import { previewCutoff } from "../lib/previewWindow.ts";
 import { parseEntityParam } from "../lib/publicId.ts";
 import type { AudioBackend } from "../player/backend.ts";
 import { CommandLine } from "./CommandLine.tsx";
@@ -366,9 +368,18 @@ export function App({
     [backend, accessToken, say],
   );
 
+  /**
+   * Играть выпуск по UUID.
+   *
+   * Именно по первичному ключу, а не через parseEntityParam: сюда UUID приходит
+   * из лайков, находок, плейлистов и списков артиста, и как «параметр ссылки» он
+   * выглядит слагом. Запрос уходил с `slug=eq.<uuid>`, ничего не находил, и
+   * выпуски не открывались нигде, кроме разделов, где строка списка сама была
+   * выпуском.
+   */
   const playById = useCallback(
     async (showId: string) => {
-      const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
+      const show = await findShowById(showId, accessToken).catch(() => null);
       if (show) await playShow(show);
       else say("Выпуск не открылся");
     },
@@ -423,14 +434,22 @@ export function App({
 
   // Превью обязан обрывать клиент: в бакете лежит ПОЛНАЯ копия трека, и без
   // этой проверки «превью» оказалось бы треком целиком.
+  //
+  // Обрыв разрешён только после того, как мы увидели позицию ВНУТРИ окна —
+  // правило и причина в previewCutoff. Флаг сбрасывается на каждый новый трек.
+  const previewArmed = React.useRef(false);
+
   useEffect(() => {
-    const limit = now?.previewEndSec;
-    if (!limit || status.positionSec === null) return;
-    if (status.positionSec >= limit) {
-      void backend.setPaused(true);
-      say("Конец превью. Полный трек — по подписке или после покупки.");
-    }
-  }, [now?.previewEndSec, status.positionSec, backend, say]);
+    previewArmed.current = false;
+  }, [now]);
+
+  useEffect(() => {
+    const { stop, armed } = previewCutoff(status.positionSec, now?.previewEndSec ?? null, previewArmed.current);
+    previewArmed.current = armed;
+    if (!stop) return;
+    void backend.setPaused(true);
+    say("Конец превью. Полный трек — по подписке или после покупки.");
+  }, [now, status.positionSec, backend, say]);
 
   // ── Открытие карточки ──
 

@@ -103,6 +103,26 @@ export async function findShow(param: EntityParam, accessToken: string | null = 
  * умеет OR через вложенную таблицу, а `artists!inner` работает только фильтром
  * по ней. Дедуп по id — выпуск может найтись обоими путями сразу.
  */
+/**
+ * Выпуск по первичному ключу.
+ *
+ * Отдельно от findShow намеренно. Тот принимает параметр ССЫЛКИ — число или
+ * слаг, — а здесь на входе UUID из другой таблицы (лайки, находки, плейлисты,
+ * выпуски артиста). Пропущенный через parseEntityParam, он выглядел как слаг, и
+ * запрос уходил с `slug=eq.<uuid>` — пустой ответ и «Выпуск не открылся» во всех
+ * разделах, кроме тех, где строка списка сама была выпуском.
+ */
+export async function findShowById(id: string, accessToken: string | null = null): Promise<Show | null> {
+  const rows = (await request(
+    restUrl(`shows_v2?select=${encodeURIComponent(SHOW_SELECT)}&id=eq.${encodeURIComponent(id)}&limit=1`),
+    { headers: headers(accessToken) },
+  )) as ShowRow[] | null;
+
+  const row = rows?.[0];
+  if (!row || isHiddenFromSite(row.status)) return null;
+  return toShow(row);
+}
+
 export async function searchShows(query: string, limit = 12, accessToken: string | null = null): Promise<Show[]> {
   const pattern = `%${query}%`;
   const auth = headers(accessToken);

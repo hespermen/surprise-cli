@@ -5422,6 +5422,15 @@ async function findShow(param, accessToken = null) {
   if (isHiddenFromSite(row.status)) return null;
   return toShow(row);
 }
+async function findShowById(id, accessToken = null) {
+  const rows = await request(
+    restUrl(`shows_v2?select=${encodeURIComponent(SHOW_SELECT)}&id=eq.${encodeURIComponent(id)}&limit=1`),
+    { headers: headers(accessToken) }
+  );
+  const row = rows?.[0];
+  if (!row || isHiddenFromSite(row.status)) return null;
+  return toShow(row);
+}
 async function searchShows(query, limit = 12, accessToken = null) {
   const pattern = `%${query}%`;
   const auth = headers(accessToken);
@@ -5495,6 +5504,11 @@ function previewWindow(track) {
   const desired = explicit ?? Math.floor(total * PREVIEW_START_RATIO);
   const startSec = Math.max(0, Math.min(desired, total - wanted));
   return { startSec, durationSec: wanted, endSec: startSec + wanted };
+}
+function previewCutoff(positionSec, endSec, armed) {
+  if (endSec === null || positionSec === null) return { stop: false, armed };
+  if (positionSec < endSec) return { stop: false, armed: true };
+  return { stop: armed, armed };
 }
 var PREVIEW_FALLBACK_SEC, PREVIEW_START_RATIO, positiveInt;
 var init_previewWindow = __esm({
@@ -22985,7 +22999,7 @@ function App2({
   );
   const playById = (0, import_react30.useCallback)(
     async (showId) => {
-      const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
+      const show = await findShowById(showId, accessToken).catch(() => null);
       if (show) await playShow(show);
       else say("\u0412\u044B\u043F\u0443\u0441\u043A \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u043B\u0441\u044F");
     },
@@ -23024,14 +23038,17 @@ function App2({
     },
     [accessToken, backend, say]
   );
+  const previewArmed = import_react30.default.useRef(false);
   (0, import_react30.useEffect)(() => {
-    const limit = now?.previewEndSec;
-    if (!limit || status.positionSec === null) return;
-    if (status.positionSec >= limit) {
-      void backend.setPaused(true);
-      say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
-    }
-  }, [now?.previewEndSec, status.positionSec, backend, say]);
+    previewArmed.current = false;
+  }, [now]);
+  (0, import_react30.useEffect)(() => {
+    const { stop, armed } = previewCutoff(status.positionSec, now?.previewEndSec ?? null, previewArmed.current);
+    previewArmed.current = armed;
+    if (!stop) return;
+    void backend.setPaused(true);
+    say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
+  }, [now, status.positionSec, backend, say]);
   const openDrill = (0, import_react30.useCallback)(
     async (title, load) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${title}\xBB\u2026`);
@@ -23821,6 +23838,7 @@ var init_App2 = __esm({
     init_config();
     init_format();
     init_ids();
+    init_previewWindow();
     init_publicId();
     await init_CommandLine();
     init_commands();
