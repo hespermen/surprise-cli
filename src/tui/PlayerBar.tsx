@@ -66,7 +66,9 @@ export function PlayerBar({
         </Box>
       </Box>
 
-      {subtitle ? <Text color={theme.accentDim}>{fit(subtitle, inner)}</Text> : null}
+      {/* Строка подзаголовка рисуется ВСЕГДА, пустой при отсутствии текста:
+          то появляющаяся, то исчезающая строка сдвигала бы всё под собой. */}
+      <Text color={theme.accentDim}>{subtitle ? fit(subtitle, inner) : " "}</Text>
 
       {/* Прогресс отдельной строкой во всю ширину.
           Раньше он делил строку с названием, временем и метаданными и

@@ -78,7 +78,7 @@ export function DetailsPanel({
       borderColor={focused ? theme.borderActive : theme.border}
       paddingX={1}
       width={width}
-      flexGrow={1}
+      height={height}
     >
       {!details ? (
         <Text color={theme.muted}>Выберите что-нибудь в списке</Text>

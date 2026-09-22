@@ -78,14 +78,13 @@ import {
 import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, type Lang } from "./i18n.ts";
 import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
-import { Visualizer } from "./Visualizer.tsx";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { LevelMeter } from "./LevelMeter.tsx";
 import { decayPeak } from "../player/meter.ts";
 import { parseLevels } from "../player/levels.ts";
 import { isLiked, toggleLike, type LikeTarget } from "../api/library.ts";
 import { Sidebar } from "./Sidebar.tsx";
-import { theme } from "./theme.ts";
+import { fit, theme } from "./theme.ts";
 import { usePlayer } from "./usePlayer.ts";
 
 type Focus = "sidebar" | "list" | "details";
@@ -184,8 +183,6 @@ export function App({
   const [typing, setTyping] = useState(false);
 
   const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang() });
-  /** История громкости для ленты, слева направо по времени. */
-  const [levels, setLevels] = useState<number[]>([]);
   /** Уровни по каналам и удерживаемые пики — для измерителя. */
   const [channels, setChannels] = useState<number[]>([]);
   const [peaks, setPeaks] = useState<number[]>([]);
@@ -530,10 +527,7 @@ export function App({
         return;
       }
       void backend.levels?.().then((raw) => {
-        const { rmsDb, channelsDb } = parseLevels(raw);
-        // Держим ровно столько, сколько может поместиться в самую широкую
-        // строку: хранить больше незачем, а меньше — лента дёргалась бы.
-        setLevels((previous) => [...previous, rmsDb].slice(-200));
+        const { channelsDb } = parseLevels(raw);
         setChannels(channelsDb);
         // Пик подпрыгивает мгновенно и опускается по шагу: иначе короткий
         // всплеск исчезает раньше, чем его успеешь заметить.
@@ -1312,11 +1306,33 @@ export function App({
   if (showHelp) return <HelpOverlay width={width} />;
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
-  // Логотип прячем на низком терминале: пять строк из двадцати — это четверть
-  // экрана, и списку остаётся слишком мало.
-  const showLogo = height >= 28 && !commandOpen;
-  const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6) - (showLogo ? LOGO_HEIGHT : 0));
-  const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
+
+  // Высота считается по тому, что РЕАЛЬНО рисуется, а не прикидкой.
+  //
+  // Раньше здесь стояла константа, и когда сумма частей превышала окно,
+  // терминал начинал прокручивать: логотип обрезался сверху, а вся раскладка
+  // прыгала на строку при каждом изменении содержимого. Если места не хватает,
+  // части отключаются по очереди — сначала логотип, потом измеритель, — а не
+  // выдавливают друг друга за экран.
+  const PLAYER_ROWS = 5; // рамка, заголовок, подзаголовок, прогресс
+  const HINT_ROWS = 1;
+  const commandRows = commandOpen ? 13 : 0;
+  const meterRows = channels.length > 0 ? channels.length + 1 : 0;
+
+  const fixedRows = PLAYER_ROWS + HINT_ROWS + commandRows;
+  const showMeter = !!backend.levels && meterRows > 0 && height - fixedRows - meterRows >= 14;
+  const showLogo =
+    !commandOpen && height - fixedRows - (showMeter ? meterRows : 0) - LOGO_HEIGHT >= 16;
+
+  const bodyHeight = Math.max(
+    8,
+    height - fixedRows - (showMeter ? meterRows : 0) - (showLogo ? LOGO_HEIGHT : 0),
+  );
+  // Список и подробности делят тело нацело: остаток от деления ушёл бы в
+  // незанятую строку, и рамки разъехались бы на один ряд.
+  const listBox = Math.max(7, Math.round(bodyHeight * 0.55));
+  const listHeight = Math.max(3, listBox - 4);
+  const detailsBox = Math.max(5, bodyHeight - listBox);
 
   const listTitle = drill
     ? `${drill.title} — ${t("hint.back")}`
@@ -1367,7 +1383,7 @@ export function App({
             details={details}
             focused={focus === "details"}
             width={contentWidth}
-            height={Math.max(6, bodyHeight - listHeight - 2)}
+            height={detailsBox}
           />
         </Box>
       </Box>
@@ -1385,12 +1401,7 @@ export function App({
       {/* Показываем только когда бэкенд реально даёт уровни: у ffplay их взять
           неоткуда, а прибор с выдуманными числами хуже отсутствующего — по нему
           принимают решения. */}
-      {backend.levels ? (
-        <>
-          <LevelMeter channelsDb={channels} peaksDb={peaks} width={width} />
-          <Visualizer history={levels} palette={theme} width={width} />
-        </>
-      ) : null}
+      {showMeter ? <LevelMeter channelsDb={channels} peaksDb={peaks} width={width} /> : null}
 
       <PlayerBar
         title={info.title}
@@ -1407,7 +1418,7 @@ export function App({
 
       <Box paddingX={1}>
         <Text color={message ? theme.paused : theme.muted}>
-          {message ?? t("hint.bar")}
+          {fit(message ?? t("hint.bar"), Math.max(20, width - 2))}
         </Text>
       </Box>
     </Box>

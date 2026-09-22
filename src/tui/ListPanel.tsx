@@ -82,7 +82,9 @@ export function ListPanel<T>({
       borderStyle="round"
       borderColor={focused ? theme.borderActive : theme.border}
       paddingX={1}
-      flexGrow={1}
+      // Высота задана явно: с flexGrow панели делили остаток по-разному в
+      // зависимости от содержимого, и раскладка дышала при каждой смене строки.
+      height={height + 4}
     >
       <Box>
         <Text bold color={focused ? theme.accent : theme.muted}>
