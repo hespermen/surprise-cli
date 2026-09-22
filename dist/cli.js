@@ -20548,7 +20548,7 @@ var init_Box = __esm({
 });
 
 // node_modules/ink/build/components/Text.js
-function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap: wrap3 = "wrap", children }) {
+function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap: wrap4 = "wrap", children }) {
   if (children === void 0 || children === null) {
     return null;
   }
@@ -20579,7 +20579,7 @@ function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, i
     }
     return children2;
   };
-  return import_react7.default.createElement("ink-text", { style: { flexGrow: 0, flexShrink: 1, flexDirection: "row", textWrap: wrap3 }, internal_transform: transform }, children);
+  return import_react7.default.createElement("ink-text", { style: { flexGrow: 0, flexShrink: 1, flexDirection: "row", textWrap: wrap4 }, internal_transform: transform }, children);
 }
 var import_react7;
 var init_Text = __esm({
@@ -22200,6 +22200,20 @@ var init_HelpOverlay = __esm({
 });
 
 // src/tui/LoginOverlay.tsx
+function wrap3(text, width2) {
+  const lines = [];
+  let current = "";
+  for (const word of text.split(/\s+/)) {
+    if (!current) current = word;
+    else if ([...current].length + 1 + [...word].length <= width2) current += ` ${word}`;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
 function LoginOverlay({ phase, width: width2 }) {
   const inner = Math.max(30, width2 - 6);
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
@@ -22212,15 +22226,46 @@ function LoginOverlay({ phase, width: width2 }) {
       paddingY: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: theme.accent, children: "\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram" }),
-        phase.kind === "starting" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0413\u043E\u0442\u043E\u0432\u0438\u043C \u0441\u0441\u044B\u043B\u043A\u0443\u2026" }) }) : phase.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.danger, children: fit(phase.error, inner) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "Esc \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: theme.accent, children: "\u0412\u0445\u043E\u0434 \u0432 SURPRISE.FM" }),
+        phase.kind === "choose" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043F\u043E\u0441\u043E\u0431 \u2014 \u2191/\u2193 \u0438 Enter, Esc \u043E\u0442\u043C\u0435\u043D\u044F\u0435\u0442" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: LOGIN_METHODS.map((method, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              color: index === phase.index ? theme.accent : void 0,
+              bold: index === phase.index,
+              children: [
+                index === phase.index ? "\u25B8 " : "  ",
+                method.label,
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+                  " \u2014 ",
+                  method.hint
+                ] })
+              ]
+            },
+            method.id
+          )) })
+        ] }) : phase.kind === "email" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: phase.field === "email" ? theme.accent : theme.muted, children: "\u041F\u043E\u0447\u0442\u0430:  " }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: phase.email }),
+            phase.field === "email" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: "\u258C" }) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: phase.field === "password" ? theme.accent : theme.muted, children: "\u041F\u0430\u0440\u043E\u043B\u044C: " }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "\u2022".repeat(phase.password.length) }),
+            phase.field === "password" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: "\u258C" }) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: phase.busy ? "\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C\u2026" : "Enter \u2014 \u0434\u0430\u043B\u044C\u0448\u0435 \xB7 Esc \u2014 \u043E\u0442\u043C\u0435\u043D\u0430" }) })
+        ] }) : phase.kind === "starting" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0413\u043E\u0442\u043E\u0432\u0438\u043C \u0441\u0441\u044B\u043B\u043A\u0443\u2026" }) }) : phase.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          wrap3(phase.error, inner).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.danger, children: line }, index)),
+          phase.hint ? wrap3(phase.hint, inner).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: line }, `hint-${index}`)) : null,
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "Esc \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-          phase.qr ? phase.qr.split("\n").map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: line }, index)) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B \u0443\u0437\u043A\u043E\u0432\u0430\u0442 \u0434\u043B\u044F QR \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443 \u0438\u043B\u0438 \u0440\u0430\u0441\u0442\u044F\u043D\u0438\u0442\u0435 \u043E\u043A\u043D\u043E" }),
+          phase.qr ? phase.qr.split("\n").map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: line }, index)) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B \u0443\u0437\u043A\u043E\u0432\u0430\u0442 \u0434\u043B\u044F QR \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u041E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 QR \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u043E\u043C \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: fit(phase.url, inner) }),
+            wrap3(phase.url, inner).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: line }, index)),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
               "\u0417\u0430\u0442\u0435\u043C \u043D\u0430\u0436\u043C\u0438\u0442\u0435 Start \u0443 \u0431\u043E\u0442\u0430. \u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \xB7 ",
               phase.secondsLeft,
@@ -22233,7 +22278,7 @@ function LoginOverlay({ phase, width: width2 }) {
     }
   );
 }
-var import_react25, import_jsx_runtime4;
+var import_react25, import_jsx_runtime4, LOGIN_METHODS;
 var init_LoginOverlay = __esm({
   async "src/tui/LoginOverlay.tsx"() {
     "use strict";
@@ -22241,6 +22286,10 @@ var init_LoginOverlay = __esm({
     import_react25 = __toESM(require_react(), 1);
     init_theme();
     import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+    LOGIN_METHODS = [
+      { id: "email", label: "\u041F\u043E\u0447\u0442\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C", hint: "\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432\u0441\u0435\u0433\u0434\u0430" },
+      { id: "telegram", label: "Telegram", hint: "QR \u0438\u043B\u0438 \u0441\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0431\u043E\u0442\u0430" }
+    ];
   }
 });
 
@@ -23084,8 +23133,36 @@ function App2({
     [openSection]
   );
   const loginAbort = import_react30.default.useRef(null);
-  const startLogin = (0, import_react30.useCallback)(async () => {
-    setCommandOpen(false);
+  const applySession = (0, import_react30.useCallback)(
+    (session) => {
+      setAccessToken(session.access_token);
+      setUserId(session.user_id);
+      setLogin(null);
+      setRows((previous) => ({ radio: previous.radio }));
+      setSelected({});
+      setDrill(null);
+      const claims = parseJwt(session.access_token);
+      say(`\u0412\u043E\u0448\u043B\u0438${claims.email && !claims.email.endsWith("@telegram.user") ? ` \xB7 ${claims.email}` : ""}`);
+    },
+    [say]
+  );
+  const submitEmailLogin = (0, import_react30.useCallback)(
+    async (email, password) => {
+      setLogin({ kind: "email", email, password, field: "password", busy: true });
+      try {
+        const session = await loginWithPassword(email, password);
+        applySession(session);
+      } catch (error) {
+        setLogin({
+          kind: "failed",
+          error: error.message,
+          hint: "\u041F\u0430\u0440\u043E\u043B\u044F \u043D\u0435\u0442? \u041D\u0430 \u0441\u0430\u0439\u0442\u0435 \u044D\u0442\u043E \xAB\u0417\u0430\u0431\u044B\u043B\u0438 \u043F\u0430\u0440\u043E\u043B\u044C\xBB \u2014 surprise.fm/login"
+        });
+      }
+    },
+    [applySession]
+  );
+  const startTelegram = (0, import_react30.useCallback)(async () => {
     setLogin({ kind: "starting" });
     let pending;
     try {
@@ -23093,7 +23170,8 @@ function App2({
     } catch (error) {
       setLogin({
         kind: "failed",
-        error: error instanceof TelegramUnavailableError ? "\u0421\u0435\u0440\u0432\u0435\u0440 \u043F\u043E\u043A\u0430 \u043D\u0435 \u043F\u0443\u0441\u043A\u0430\u0435\u0442 CLI \u0432 telegram-\u0432\u0445\u043E\u0434. \u0417\u0430\u043F\u0430\u0441\u043D\u043E\u0439 \u043F\u0443\u0442\u044C: \u0432\u044B\u0439\u0442\u0438 (q) \u0438 `surprise login --email`" : error.message
+        error: error instanceof TelegramUnavailableError ? "\u0421\u0435\u0440\u0432\u0435\u0440 \u043F\u043E\u043A\u0430 \u043D\u0435 \u043F\u0443\u0441\u043A\u0430\u0435\u0442 \u0442\u0435\u0440\u043C\u0438\u043D\u0430\u043B \u0432 telegram-\u0432\u0445\u043E\u0434: \u043F\u0440\u0430\u0432\u043A\u0430 \u043D\u0430 \u0431\u044D\u043A\u0435\u043D\u0434\u0435 \u043D\u0435 \u0432\u044B\u043A\u0430\u0447\u0435\u043D\u0430." : error.message,
+        hint: error instanceof TelegramUnavailableError ? "\u0412\u043E\u0439\u0434\u0438\u0442\u0435 \u043F\u043E\u0447\u0442\u043E\u0439 \u0438 \u043F\u0430\u0440\u043E\u043B\u0435\u043C \u2014 \u044D\u0442\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432\u0441\u0435\u0433\u0434\u0430. \u0418\u043B\u0438 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0441 SURPRISE_PLATFORM_HINT=extension." : null
       });
       return;
     }
@@ -23111,23 +23189,17 @@ function App2({
       onTick: (secondsLeft) => setLogin((previous) => previous?.kind === "waiting" ? { ...previous, secondsLeft } : previous)
     });
     loginAbort.current = null;
-    if (result.status === "ok") {
-      setAccessToken(result.session.access_token);
-      setUserId(result.session.user_id);
-      setLogin(null);
-      setRows((previous) => ({ radio: previous.radio }));
-      setSelected({});
-      setDrill(null);
-      const claims = parseJwt(result.session.access_token);
-      say(`\u0412\u043E\u0448\u043B\u0438${claims.email ? ` \xB7 ${claims.email}` : ""}`);
-      return;
-    }
+    if (result.status === "ok") return applySession(result.session);
     if (result.status === "expired") {
-      setLogin({ kind: "failed", error: "\u0412\u0440\u0435\u043C\u044F \u043D\u0430 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0432\u044B\u0448\u043B\u043E \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login \u0437\u0430\u043D\u043E\u0432\u043E" });
+      setLogin({ kind: "failed", error: "\u0412\u0440\u0435\u043C\u044F \u043D\u0430 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0432\u044B\u0448\u043B\u043E", hint: "\u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login \u0437\u0430\u043D\u043E\u0432\u043E" });
       return;
     }
-    setLogin({ kind: "failed", error: result.error });
-  }, [say]);
+    setLogin({ kind: "failed", error: result.error, hint: null });
+  }, [applySession]);
+  const startLogin = (0, import_react30.useCallback)(() => {
+    setCommandOpen(false);
+    setLogin({ kind: "choose", index: 0 });
+  }, []);
   const doLogout = (0, import_react30.useCallback)(async () => {
     await logout().catch(() => {
     });
@@ -23188,7 +23260,8 @@ function App2({
           setDrill(null);
           return;
         case "login":
-          return void startLogin();
+          startLogin();
+          return;
         case "logout":
           return void doLogout();
         case "whoami":
@@ -23223,6 +23296,46 @@ function App2({
         loginAbort.current?.abort();
         loginAbort.current = null;
         setLogin(null);
+        return;
+      }
+      if (login.kind === "choose") {
+        if (key.downArrow || input === "j") {
+          return setLogin({ kind: "choose", index: Math.min(LOGIN_METHODS.length - 1, login.index + 1) });
+        }
+        if (key.upArrow || input === "k") {
+          return setLogin({ kind: "choose", index: Math.max(0, login.index - 1) });
+        }
+        if (key.return) {
+          const method = LOGIN_METHODS[login.index];
+          if (method?.id === "telegram") return void startTelegram();
+          return setLogin({ kind: "email", email: "", password: "", field: "email", busy: false });
+        }
+        return;
+      }
+      if (login.kind === "email" && !login.busy) {
+        if (key.backspace || key.delete) {
+          return setLogin({
+            ...login,
+            [login.field]: login[login.field].slice(0, -1)
+          });
+        }
+        if (key.tab) {
+          return setLogin({ ...login, field: login.field === "email" ? "password" : "email" });
+        }
+        if (input && !key.ctrl && !key.meta) {
+          const { text, submitted } = splitBurst(input);
+          const nextValue = login[login.field] + text;
+          const next = { ...login, [login.field]: nextValue };
+          if (!submitted) return setLogin(next);
+          if (login.field === "email") return setLogin({ ...next, field: "password" });
+          if (next.email && next.password) return void submitEmailLogin(next.email, next.password);
+          return setLogin(next);
+        }
+        if (key.return) {
+          if (login.field === "email") return setLogin({ ...login, field: "password" });
+          if (login.email && login.password) return void submitEmailLogin(login.email, login.password);
+        }
+        return;
       }
       return;
     }

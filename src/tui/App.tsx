@@ -45,6 +45,7 @@ import {
 import {
   TelegramUnavailableError,
   logout as logoutSession,
+  loginWithPassword,
   startTelegramLogin,
   waitForTelegramLogin,
 } from "../net/auth.ts";
@@ -59,7 +60,7 @@ import { CommandLine } from "./CommandLine.tsx";
 import { parseCommand, resolveCommand, suggestCommands, SECTION_ALIASES } from "./commands.ts";
 import { DetailsPanel, type Details } from "./DetailsPanel.tsx";
 import { HelpOverlay } from "./HelpOverlay.tsx";
-import { LoginOverlay, type LoginPhase } from "./LoginOverlay.tsx";
+import { LOGIN_METHODS, LoginOverlay, type LoginPhase } from "./LoginOverlay.tsx";
 import { ListPanel } from "./ListPanel.tsx";
 import { PlayerBar } from "./PlayerBar.tsx";
 import { SECTIONS, sectionById, type ColumnSpec, type SavedRow, type SectionId } from "./sections.ts";
@@ -617,8 +618,41 @@ export function App({
    */
   const loginAbort = React.useRef<AbortController | null>(null);
 
-  const startLogin = useCallback(async () => {
-    setCommandOpen(false);
+  /** Успешный вход: подхватываем токен и сбрасываем кэш разделов. */
+  const applySession = useCallback(
+    (session: { access_token: string; user_id: string }) => {
+      setAccessToken(session.access_token);
+      setUserId(session.user_id);
+      setLogin(null);
+      // Разделы перечитаются под новым токеном — старые строки принадлежали
+      // другому (или никакому) пользователю.
+      setRows((previous) => ({ radio: previous.radio }));
+      setSelected({});
+      setDrill(null);
+      const claims = parseJwt(session.access_token);
+      say(`Вошли${claims.email && !claims.email.endsWith("@telegram.user") ? ` · ${claims.email}` : ""}`);
+    },
+    [say],
+  );
+
+  const submitEmailLogin = useCallback(
+    async (email: string, password: string) => {
+      setLogin({ kind: "email", email, password, field: "password", busy: true });
+      try {
+        const session = await loginWithPassword(email, password);
+        applySession(session);
+      } catch (error) {
+        setLogin({
+          kind: "failed",
+          error: (error as Error).message,
+          hint: "Пароля нет? На сайте это «Забыли пароль» — surprise.fm/login",
+        });
+      }
+    },
+    [applySession],
+  );
+
+  const startTelegram = useCallback(async () => {
     setLogin({ kind: "starting" });
 
     let pending;
@@ -629,8 +663,12 @@ export function App({
         kind: "failed",
         error:
           error instanceof TelegramUnavailableError
-            ? "Сервер пока не пускает CLI в telegram-вход. Запасной путь: выйти (q) и `surprise login --email`"
+            ? "Сервер пока не пускает терминал в telegram-вход: правка на бэкенде не выкачена."
             : (error as Error).message,
+        hint:
+          error instanceof TelegramUnavailableError
+            ? "Войдите почтой и паролем — это работает всегда. Или запустите с SURPRISE_PLATFORM_HINT=extension."
+            : null,
       });
       return;
     }
@@ -653,25 +691,18 @@ export function App({
     });
     loginAbort.current = null;
 
-    if (result.status === "ok") {
-      setAccessToken(result.session.access_token);
-      setUserId(result.session.user_id);
-      setLogin(null);
-      // Разделы перечитаются под новым токеном — старые строки принадлежали
-      // другому (или никакому) пользователю.
-      setRows((previous) => ({ radio: previous.radio }));
-      setSelected({});
-      setDrill(null);
-      const claims = parseJwt(result.session.access_token);
-      say(`Вошли${claims.email ? ` · ${claims.email}` : ""}`);
-      return;
-    }
+    if (result.status === "ok") return applySession(result.session);
     if (result.status === "expired") {
-      setLogin({ kind: "failed", error: "Время на подтверждение вышло — наберите /login заново" });
+      setLogin({ kind: "failed", error: "Время на подтверждение вышло", hint: "Наберите /login заново" });
       return;
     }
-    setLogin({ kind: "failed", error: result.error });
-  }, [say]);
+    setLogin({ kind: "failed", error: result.error, hint: null });
+  }, [applySession]);
+
+  const startLogin = useCallback(() => {
+    setCommandOpen(false);
+    setLogin({ kind: "choose", index: 0 });
+  }, []);
 
   const doLogout = useCallback(async () => {
     await logoutSession().catch(() => {});
@@ -737,7 +768,8 @@ export function App({
           setDrill(null);
           return;
         case "login":
-          return void startLogin();
+          startLogin();
+          return;
         case "logout":
           return void doLogout();
         case "whoami":
@@ -775,7 +807,54 @@ export function App({
         loginAbort.current?.abort();
         loginAbort.current = null;
         setLogin(null);
+        return;
       }
+
+      if (login.kind === "choose") {
+        if (key.downArrow || input === "j") {
+          return setLogin({ kind: "choose", index: Math.min(LOGIN_METHODS.length - 1, login.index + 1) });
+        }
+        if (key.upArrow || input === "k") {
+          return setLogin({ kind: "choose", index: Math.max(0, login.index - 1) });
+        }
+        if (key.return) {
+          const method = LOGIN_METHODS[login.index];
+          if (method?.id === "telegram") return void startTelegram();
+          return setLogin({ kind: "email", email: "", password: "", field: "email", busy: false });
+        }
+        return;
+      }
+
+      if (login.kind === "email" && !login.busy) {
+        if (key.backspace || key.delete) {
+          return setLogin({
+            ...login,
+            [login.field]: login[login.field].slice(0, -1),
+          } as LoginPhase);
+        }
+        if (key.tab) {
+          return setLogin({ ...login, field: login.field === "email" ? "password" : "email" });
+        }
+        if (input && !key.ctrl && !key.meta) {
+          // Ввод приходит пачкой (вставка, быстрый набор), поэтому разбираем её
+          // целиком: иначе вставленная почта потерялась бы вся разом.
+          const { text, submitted } = splitBurst(input);
+          const nextValue = login[login.field] + text;
+          const next = { ...login, [login.field]: nextValue } as LoginPhase & { kind: "email" };
+
+          if (!submitted) return setLogin(next);
+          // Enter на почте переводит к паролю, на пароле — отправляет.
+          if (login.field === "email") return setLogin({ ...next, field: "password" });
+          if (next.email && next.password) return void submitEmailLogin(next.email, next.password);
+          return setLogin(next);
+        }
+        if (key.return) {
+          if (login.field === "email") return setLogin({ ...login, field: "password" });
+          if (login.email && login.password) return void submitEmailLogin(login.email, login.password);
+        }
+        return;
+      }
+
       return;
     }
 
