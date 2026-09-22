@@ -89,14 +89,14 @@ async function readBody(res) {
   }
 }
 async function once(url, options) {
-  const { method = "GET", headers: headers2 = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
+  const { method = "GET", headers: headers3 = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
   const timeout = AbortSignal.timeout(timeoutMs);
   const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let res;
   try {
     res = await fetch(url, {
       method,
-      headers: headers2,
+      headers: headers3,
       body: body === void 0 ? void 0 : JSON.stringify(body),
       signal: composed
     });
@@ -5142,6 +5142,51 @@ var init_shows = __esm({
     init_showVisibility();
     init_http();
     SHOW_SELECT = "id,public_id,slug,title,description,cover_url,duration,status,published_at,tracklist_disabled,show_artists(artists(id,name,slug))";
+  }
+});
+
+// src/lib/publicId.ts
+function parseEntityParam(param) {
+  const isNumeric = !!param && /^\d+$/.test(param);
+  return {
+    isNumeric,
+    publicId: isNumeric ? Number(param) : null,
+    slug: isNumeric ? null : param ?? null
+  };
+}
+function parseSurpriseLink(input) {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  let url;
+  try {
+    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+  if (host !== "surprise.fm") return null;
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+  const path = segments[0] === "store" ? segments.slice(1) : segments;
+  const [head, tail] = path;
+  if (!head || !tail) return null;
+  if (head === "track") return { kind: "track", param: parseEntityParam(tail) };
+  const route = ROUTES.find((candidate) => candidate.prefixes.includes(head));
+  return route ? { kind: route.kind, param: parseEntityParam(tail) } : null;
+}
+var ROUTES;
+var init_publicId = __esm({
+  "src/lib/publicId.ts"() {
+    "use strict";
+    ROUTES = [
+      { prefixes: ["episodes"], kind: "show" },
+      { prefixes: ["release", "releases"], kind: "release" },
+      { prefixes: ["artist"], kind: "artist" },
+      { prefixes: ["author"], kind: "author" },
+      { prefixes: ["playlist"], kind: "playlist" },
+      { prefixes: ["lists"], kind: "list" },
+      { prefixes: ["shows"], kind: "program" }
+    ];
   }
 });
 
@@ -16903,10 +16948,10 @@ var require_websocket = __commonJS({
           websocket._originalIpc = isIpcUrl;
           websocket._originalSecure = isSecure;
           websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
-          const headers2 = options && options.headers;
+          const headers3 = options && options.headers;
           options = { ...options, headers: {} };
-          if (headers2) {
-            for (const [key2, value] of Object.entries(headers2)) {
+          if (headers3) {
+            for (const [key2, value] of Object.entries(headers3)) {
               options.headers[key2.toLowerCase()] = value;
             }
           }
@@ -17609,9 +17654,9 @@ var require_websocket_server = __commonJS({
             req
           };
           if (this.options.verifyClient.length === 2) {
-            this.options.verifyClient(info, (verified, code, message, headers2) => {
+            this.options.verifyClient(info, (verified, code, message, headers3) => {
               if (!verified) {
-                return abortHandshake(socket, code || 401, message, headers2);
+                return abortHandshake(socket, code || 401, message, headers3);
               }
               this.completeUpgrade(
                 extensions,
@@ -17651,7 +17696,7 @@ var require_websocket_server = __commonJS({
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
         const digest = createHash("sha1").update(key + GUID).digest("base64");
-        const headers2 = [
+        const headers3 = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
           "Connection: Upgrade",
@@ -17661,7 +17706,7 @@ var require_websocket_server = __commonJS({
         if (protocols.size) {
           const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
           if (protocol) {
-            headers2.push(`Sec-WebSocket-Protocol: ${protocol}`);
+            headers3.push(`Sec-WebSocket-Protocol: ${protocol}`);
             ws._protocol = protocol;
           }
         }
@@ -17670,11 +17715,11 @@ var require_websocket_server = __commonJS({
           const value = extension2.format({
             [PerMessageDeflate2.extensionName]: [params]
           });
-          headers2.push(`Sec-WebSocket-Extensions: ${value}`);
+          headers3.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
         }
-        this.emit("headers", headers2, req);
-        socket.write(headers2.concat("\r\n").join("\r\n"));
+        this.emit("headers", headers3, req);
+        socket.write(headers3.concat("\r\n").join("\r\n"));
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
@@ -17711,27 +17756,27 @@ var require_websocket_server = __commonJS({
     function socketOnError() {
       this.destroy();
     }
-    function abortHandshake(socket, code, message, headers2) {
+    function abortHandshake(socket, code, message, headers3) {
       message = message || http.STATUS_CODES[code];
-      headers2 = {
+      headers3 = {
         Connection: "close",
         "Content-Type": "text/html",
         "Content-Length": Buffer.byteLength(message),
-        ...headers2
+        ...headers3
       };
       socket.once("finish", socket.destroy);
       socket.end(
         `HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r
-` + Object.keys(headers2).map((h) => `${h}: ${headers2[h]}`).join("\r\n") + "\r\n\r\n" + message
+` + Object.keys(headers3).map((h) => `${h}: ${headers3[h]}`).join("\r\n") + "\r\n\r\n" + message
       );
     }
-    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers2) {
+    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers3) {
       if (server.listenerCount("wsClientError")) {
         const err = new Error(message);
         Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
         server.emit("wsClientError", err, socket, req);
       } else {
-        abortHandshake(socket, code, message, headers2);
+        abortHandshake(socket, code, message, headers3);
       }
     }
   }
@@ -20067,7 +20112,7 @@ var init_Box = __esm({
 });
 
 // node_modules/ink/build/components/Text.js
-function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap: wrap2 = "wrap", children }) {
+function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap: wrap3 = "wrap", children }) {
   if (children === void 0 || children === null) {
     return null;
   }
@@ -20098,7 +20143,7 @@ function Text({ color, backgroundColor, dimColor = false, bold: bold2 = false, i
     }
     return children2;
   };
-  return import_react7.default.createElement("ink-text", { style: { flexGrow: 0, flexShrink: 1, flexDirection: "row", textWrap: wrap2 }, internal_transform: transform }, children);
+  return import_react7.default.createElement("ink-text", { style: { flexGrow: 0, flexShrink: 1, flexDirection: "row", textWrap: wrap3 }, internal_transform: transform }, children);
 }
 var import_react7;
 var init_Text = __esm({
@@ -21290,6 +21335,70 @@ var init_build2 = __esm({
   }
 });
 
+// src/api/catalog.ts
+function headers2(accessToken) {
+  return accessToken ? authHeaders(accessToken) : anonHeaders();
+}
+async function listArtists(options = {}) {
+  const params = new URLSearchParams({
+    select: "id,public_id,slug,name,bio,is_resident",
+    is_active: "eq.true",
+    order: "is_resident.desc.nullslast,name.asc",
+    limit: String(options.limit ?? 200)
+  });
+  const rows = await request(restUrl(`artists?${params}`), {
+    headers: headers2(options.accessToken ?? null)
+  });
+  return rows ?? [];
+}
+async function listHosts(accessToken = null, limit = 200) {
+  const params = new URLSearchParams({
+    select: "id,slug,name,bio,is_verified",
+    order: "name.asc",
+    limit: String(limit)
+  });
+  const rows = await request(restUrl(`hosts?${params}`), {
+    headers: headers2(accessToken)
+  });
+  return rows ?? [];
+}
+function toRelease(row) {
+  const artists = (row.release_artists ?? []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((link2) => link2.artists?.name).filter((name) => !!name);
+  const { release_artists: _ignored, ...rest } = row;
+  return { ...rest, artists };
+}
+async function listReleases(accessToken = null, limit = 100) {
+  const params = new URLSearchParams({
+    select: "id,public_id,slug,title,release_date,type,release_artists(position,artists(name))",
+    is_published: "eq.true",
+    order: "release_date.desc.nullslast",
+    limit: String(limit)
+  });
+  const rows = await request(restUrl(`releases?${params}`), {
+    headers: headers2(accessToken)
+  });
+  return (rows ?? []).map(toRelease);
+}
+async function showsByArtist(artistId, accessToken = null, limit = 50) {
+  const params = new URLSearchParams({
+    select: "shows_v2(id,title,duration,status,published_at)",
+    artist_id: `eq.${artistId}`,
+    limit: String(limit)
+  });
+  const rows = await request(restUrl(`show_artists?${params}`), {
+    headers: headers2(accessToken)
+  });
+  return (rows ?? []).map((row) => row.shows_v2).filter(
+    (show) => show !== null && show.status !== "archived"
+  ).map(({ id, title, duration }) => ({ id, title, duration }));
+}
+var init_catalog = __esm({
+  "src/api/catalog.ts"() {
+    "use strict";
+    init_http();
+  }
+});
+
 // src/tui/theme.ts
 function bar(position, total, width2) {
   if (total === null || total <= 0 || width2 < 2) return "";
@@ -21363,6 +21472,165 @@ var require_jsx_runtime = __commonJS({
   }
 });
 
+// src/tui/DetailsPanel.tsx
+function wrap2(text, width2, maxLines) {
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    if (current.length === 0) {
+      current = word;
+    } else if ([...current].length + 1 + [...word].length <= width2) {
+      current += ` ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+      if (lines.length === maxLines) break;
+    }
+  }
+  if (lines.length < maxLines && current) lines.push(current);
+  const trimmed = lines.slice(0, maxLines);
+  const last = trimmed[trimmed.length - 1];
+  if (last && lines.length >= maxLines && words.length > 0) {
+    trimmed[trimmed.length - 1] = fit(`${last} \u2026`, width2);
+  }
+  return trimmed;
+}
+function DetailsPanel({
+  details,
+  focused,
+  width: width2,
+  height
+}) {
+  const inner = Math.max(16, width2 - 4);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+    Box_default,
+    {
+      flexDirection: "column",
+      borderStyle: "round",
+      borderColor: focused ? theme.borderActive : theme.border,
+      paddingX: 1,
+      width: width2,
+      flexGrow: 1,
+      children: !details ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0447\u0442\u043E-\u043D\u0438\u0431\u0443\u0434\u044C \u0432 \u0441\u043F\u0438\u0441\u043A\u0435" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: fit(details.title, inner) }),
+        details.subtitle ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.accentDim, children: fit(details.subtitle, inner) }) : null,
+        details.facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: details.facts.map(([label, value]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.muted, children: [
+          padTo(label, 13),
+          " ",
+          fit(value, inner - 14)
+        ] }, label)) }) : null,
+        details.description ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: wrap2(details.description, inner, 3).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: line }, index)) }) : null,
+        details.tracklist.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.accent, children: [
+            "\u0422\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \xB7 ",
+            details.tracklist.length
+          ] }),
+          visibleTracks(details, Math.max(1, height - 12)).map(({ item, index }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            Text,
+            {
+              color: index === details.playingTrack ? theme.playing : theme.muted,
+              bold: index === details.playingTrack,
+              children: [
+                index === details.playingTrack ? "\u25B8" : " ",
+                padTo(formatDuration(item.timestamp_sec), 8),
+                fit([item.artist, item.title].filter(Boolean).join(" \u2014 ") || "\u2014", inner - 10)
+              ]
+            },
+            item.id
+          ))
+        ] }) : null
+      ] })
+    }
+  );
+}
+function visibleTracks(details, count) {
+  const items = details.tracklist;
+  const anchor = details.playingTrack >= 0 ? details.playingTrack : 0;
+  const from = Math.min(Math.max(0, anchor - 1), Math.max(0, items.length - count));
+  return items.slice(from, from + count).map((item, offset) => ({ item, index: from + offset }));
+}
+var import_react22, import_jsx_runtime;
+var init_DetailsPanel = __esm({
+  async "src/tui/DetailsPanel.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react22 = __toESM(require_react(), 1);
+    init_format();
+    init_theme();
+    import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+  }
+});
+
+// src/tui/HelpOverlay.tsx
+function HelpOverlay({ width: width2 }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      borderStyle: "round",
+      borderColor: theme.accent,
+      paddingX: 2,
+      paddingY: 1,
+      width: width2,
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: theme.accent, children: "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435" }),
+        GROUPS.map((group) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: theme.accentDim, children: group.title }),
+          group.rows.map(([keys, what]) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.accent, children: keys.padEnd(18) }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: what })
+          ] }, keys))
+        ] }, group.title)),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: "\u041B\u044E\u0431\u0430\u044F \u043A\u043B\u0430\u0432\u0438\u0448\u0430 \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) })
+      ]
+    }
+  );
+}
+var import_react23, import_jsx_runtime2, GROUPS;
+var init_HelpOverlay = __esm({
+  async "src/tui/HelpOverlay.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react23 = __toESM(require_react(), 1);
+    init_theme();
+    import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+    GROUPS = [
+      {
+        title: "\u041D\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044F",
+        rows: [
+          ["j / k, \u2191 / \u2193", "\u043F\u043E \u0441\u043F\u0438\u0441\u043A\u0443"],
+          ["g / G", "\u0432 \u043D\u0430\u0447\u0430\u043B\u043E / \u0432 \u043A\u043E\u043D\u0435\u0446"],
+          ["PgUp / PgDn", "\u043D\u0430 \u0434\u0435\u0441\u044F\u0442\u044C \u0441\u0442\u0440\u043E\u043A"],
+          ["Tab / Shift+Tab", "\u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0430\u044F / \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0430\u044F \u043F\u0430\u043D\u0435\u043B\u044C"],
+          ["h / l", "\u043F\u0430\u043D\u0435\u043B\u044C \u0440\u0430\u0437\u0434\u0435\u043B\u043E\u0432 / \u0441\u043F\u0438\u0441\u043E\u043A"],
+          ["1 \u2026 9", "\u0441\u0440\u0430\u0437\u0443 \u0432 \u0440\u0430\u0437\u0434\u0435\u043B"],
+          ["Enter", "\u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0438\u043B\u0438 \u0438\u0433\u0440\u0430\u0442\u044C"],
+          ["/", "\u043F\u043E\u0438\u0441\u043A"]
+        ]
+      },
+      {
+        title: "\u041F\u043B\u0435\u0435\u0440 \u2014 \u043A\u0430\u043A \u043D\u0430 \u0441\u0430\u0439\u0442\u0435",
+        rows: [
+          ["space", "\u043F\u0430\u0443\u0437\u0430"],
+          ["\u2190 / \u2192", "\u043D\u0430\u0437\u0430\u0434 / \u0432\u043F\u0435\u0440\u0451\u0434 30 \u0441\u0435\u043A\u0443\u043D\u0434"],
+          ["m", "\u0437\u0432\u0443\u043A \u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C / \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u044C"],
+          ["n / p", "\u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 / \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0438\u0439"],
+          ["r", "\u0432\u0435\u0440\u043D\u0443\u0442\u044C\u0441\u044F \u0432 \u044D\u0444\u0438\u0440"],
+          ["+ / \u2212", "\u0433\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u044C (\u043D\u0430 \u0441\u0430\u0439\u0442\u0435 \u044D\u0442\u043E \u2191/\u2193, \u0437\u0434\u0435\u0441\u044C \u043E\u043D\u0438 \u0437\u0430\u043D\u044F\u0442\u044B \u0441\u043F\u0438\u0441\u043A\u043E\u043C)"]
+        ]
+      },
+      {
+        title: "\u041F\u0440\u043E\u0447\u0435\u0435",
+        rows: [
+          ["?", "\u044D\u0442\u0430 \u0441\u043F\u0440\u0430\u0432\u043A\u0430"],
+          ["q", "\u0432\u044B\u0445\u043E\u0434"]
+        ]
+      }
+    ];
+  }
+});
+
 // src/tui/ListPanel.tsx
 function windowFor(selected, count, height) {
   if (count <= height) return { from: 0, to: count };
@@ -21387,7 +21655,7 @@ function ListPanel({
   const widthOf = (column) => column.flex ? flexWidth : column.width;
   const { from, to } = windowFor(selected, rows.length, height);
   const visible = rows.slice(from, to);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -21396,17 +21664,17 @@ function ListPanel({
       paddingX: 1,
       flexGrow: 1,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
-          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.muted, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
+          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: theme.muted, children: [
             "  ",
             selected + 1,
             "/",
             rows.length
           ] }) : null
         ] }),
-        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.muted, children: [
+        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: theme.muted, children: [
             padTo(column.header, widthOf(column)),
             " "
           ] }, index)) }),
@@ -21414,7 +21682,7 @@ function ListPanel({
             const index = from + offset;
             const isSelected = index === selected;
             const isPlaying = index === playing;
-            return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
               Text,
               {
                 color: isPlaying ? theme.playing : void 0,
@@ -21430,81 +21698,344 @@ function ListPanel({
     }
   );
 }
-var import_react22, import_jsx_runtime;
+var import_react24, import_jsx_runtime3;
 var init_ListPanel = __esm({
   async "src/tui/ListPanel.tsx"() {
     "use strict";
     await init_build2();
-    import_react22 = __toESM(require_react(), 1);
+    import_react24 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
-// src/tui/PlaybackPanel.tsx
-function mark(state) {
-  if (state.paused) return { glyph: "\u23F8", color: theme.paused };
-  if (state.idle) return { glyph: "\u2026", color: theme.muted };
-  return { glyph: "\u25B6", color: theme.playing };
-}
-function PlaybackPanel({
-  info,
+// src/tui/PlayerBar.tsx
+function PlayerBar({
+  title,
+  subtitle,
+  position,
+  total,
+  live,
   state,
+  backend,
+  volume,
+  badge,
   width: width2
 }) {
-  const { glyph, color } = mark(state);
-  const inner = Math.max(20, width2 - 4);
-  const clock = info.live ? formatDuration(info.position) : `${formatDuration(info.position)} / ${formatDuration(info.total)}`;
-  const barWidth = Math.max(0, inner - clock.length - 2);
-  const progress = info.live ? "" : bar(info.position, info.total, barWidth);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color, children: [
+  const inner = Math.max(24, width2 - 4);
+  const glyph = state.paused ? "\u23F8" : state.idle ? "\u2026" : "\u25B6";
+  const glyphColor = state.paused ? theme.paused : state.idle ? theme.muted : theme.playing;
+  const clock = live ? formatDuration(position) : `${formatDuration(position)} / ${formatDuration(total)}`;
+  const meta = `${backend} \xB7 ${volume}%${live ? " \xB7 \u044D\u0444\u0438\u0440" : ""}`;
+  const headWidth = Math.max(10, inner - clock.length - meta.length - 6);
+  const barWidth = Math.max(0, inner - clock.length - meta.length - headWidth - 6);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: glyphColor, children: [
         glyph,
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: fit(info.title, inner - 2 - (info.badge ? info.badge.length + 3 : 0)) }),
-      info.badge ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: theme.paused, children: [
-        " \xB7 ",
-        info.badge
-      ] }) : null
-    ] }),
-    info.subtitle ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.accentDim, children: fit(info.subtitle, inner) }) : null,
-    info.note ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: fit(info.note, inner) }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: theme.muted, children: [
-      "\u043F\u043B\u0435\u0435\u0440: ",
-      info.backend,
-      " \u2502 \u0442\u043E\u043C: ",
-      info.volume,
-      "%",
-      info.live ? " \u2502 \u044D\u0444\u0438\u0440" : ""
-    ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-      progress ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: theme.accent, children: [
-        progress,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
+      badge ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.paused, children: [
+        " ",
+        badge
+      ] }) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "   " }),
+      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.accent, children: [
+        bar(position, total, barWidth),
         " "
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: clock })
-    ] })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: clock }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+        "  ",
+        meta
+      ] })
+    ] }),
+    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
   ] });
 }
-var import_react23, import_jsx_runtime2;
-var init_PlaybackPanel = __esm({
-  async "src/tui/PlaybackPanel.tsx"() {
+var import_react25, import_jsx_runtime4;
+var init_PlayerBar = __esm({
+  async "src/tui/PlayerBar.tsx"() {
     "use strict";
     await init_build2();
-    import_react23 = __toESM(require_react(), 1);
+    import_react25 = __toESM(require_react(), 1);
     init_format();
     init_theme();
-    import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+  }
+});
+
+// src/tui/sections.ts
+function sectionById(id) {
+  const found = SECTIONS2.find((section) => section.id === id);
+  if (!found) throw new Error(`\u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0440\u0430\u0437\u0434\u0435\u043B: ${id}`);
+  return found;
+}
+var dash, SECTIONS2;
+var init_sections = __esm({
+  "src/tui/sections.ts"() {
+    "use strict";
+    init_catalog();
+    init_library();
+    init_shows();
+    init_format();
+    dash = (value) => value && value.trim() ? value : "\u2014";
+    SECTIONS2 = [
+      {
+        id: "radio",
+        label: "\u042D\u0444\u0438\u0440",
+        group: "station",
+        listTitle: "\u042D\u0444\u0438\u0440 \u2014 \u0447\u0442\u043E \u0438\u0433\u0440\u0430\u0435\u0442 \u0438 \u0447\u0442\u043E \u0438\u0433\u0440\u0430\u043B\u043E",
+        emptyHint: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E",
+        columns: [
+          { header: "", width: 6, value: () => "" },
+          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (item) => item.title ?? "\u2014" },
+          { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (item) => formatDuration(item.duration) }
+        ],
+        // Эфир грузится в App отдельно: он обновляется по таймеру и нужен ещё и
+        // панели плеера, поэтому живёт не здесь.
+        load: async () => []
+      },
+      {
+        id: "shows",
+        label: "\u041D\u043E\u0432\u043E\u0435",
+        group: "catalog",
+        listTitle: "\u041D\u043E\u0432\u043E\u0435 \u2014 \u0441\u0432\u0435\u0436\u0438\u0435 \u0432\u044B\u043F\u0443\u0441\u043A\u0438",
+        emptyHint: "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0443\u0441\u0442",
+        columns: [
+          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => dash(show.title) },
+          {
+            header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B",
+            width: 24,
+            value: (show) => dash(show.artists.map((artist) => artist.name).join(", "))
+          },
+          { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (show) => formatDuration(show.duration) }
+        ],
+        load: ({ accessToken }) => listShows({ limit: 100, accessToken })
+      },
+      {
+        id: "artists",
+        label: "\u0420\u0435\u0437\u0438\u0434\u0435\u043D\u0442\u044B",
+        group: "catalog",
+        listTitle: "\u0420\u0435\u0437\u0438\u0434\u0435\u043D\u0442\u044B",
+        emptyHint: "\u041D\u0438\u043A\u043E\u0433\u043E \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
+        columns: [
+          { header: "\u0418\u043C\u044F", width: 0, flex: true, value: (artist) => artist.name },
+          { header: "", width: 10, value: (artist) => artist.is_resident ? "\u0440\u0435\u0437\u0438\u0434\u0435\u043D\u0442" : "" }
+        ],
+        load: ({ accessToken }) => listArtists({ accessToken })
+      },
+      {
+        id: "hosts",
+        label: "\u0410\u0432\u0442\u043E\u0440\u044B",
+        group: "catalog",
+        listTitle: "\u0410\u0432\u0442\u043E\u0440\u044B",
+        emptyHint: "\u041D\u0438\u043A\u043E\u0433\u043E \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
+        columns: [
+          { header: "\u0418\u043C\u044F", width: 0, flex: true, value: (host) => host.name },
+          { header: "", width: 10, value: (host) => host.is_verified ? "\u2713" : "" }
+        ],
+        load: ({ accessToken }) => listHosts(accessToken)
+      },
+      {
+        id: "releases",
+        label: "\u041C\u0443\u0437\u044B\u043A\u0430",
+        group: "catalog",
+        listTitle: "\u041C\u0443\u0437\u044B\u043A\u0430 \u2014 \u0440\u0435\u043B\u0438\u0437\u044B",
+        emptyHint: "\u0420\u0435\u043B\u0438\u0437\u043E\u0432 \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
+        columns: [
+          { header: "\u0420\u0435\u043B\u0438\u0437", width: 0, flex: true, value: (release) => release.title },
+          { header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B", width: 24, value: (release) => dash(release.artists.join(", ")) },
+          // Дату режем до года-месяца-дня как есть: release_date — это date без
+          // времени, и приводить её к локальной зоне нельзя (сдвинется на сутки).
+          { header: "\u0414\u0430\u0442\u0430", width: 10, value: (release) => release.release_date ?? "\u2014" }
+        ],
+        load: ({ accessToken }) => listReleases(accessToken)
+      },
+      {
+        id: "playlists",
+        label: "\u041C\u043E\u044F \u043A\u043E\u043B\u043B\u0435\u043A\u0446\u0438\u044F",
+        group: "library",
+        needsAuth: true,
+        listTitle: "\u041C\u043E\u044F \u043A\u043E\u043B\u043B\u0435\u043A\u0446\u0438\u044F \u2014 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B",
+        emptyHint: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+        columns: [
+          { header: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442", width: 0, flex: true, value: (playlist) => playlist.title },
+          { header: "\u0422\u0440\u0435\u043A\u043E\u0432", width: 8, value: (playlist) => String(playlist.itemCount) }
+        ],
+        load: ({ accessToken, userId }) => accessToken ? listPlaylists(accessToken, userId) : Promise.resolve([])
+      },
+      {
+        id: "likes",
+        label: "\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+        group: "library",
+        needsAuth: true,
+        listTitle: "\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+        emptyHint: "\u041B\u0430\u0439\u043A\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+        columns: [
+          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => dash(show.title) },
+          { header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B", width: 24, value: (show) => dash(show.artists.join(", ")) },
+          { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (show) => formatDuration(show.duration) }
+        ],
+        load: ({ accessToken, userId }) => accessToken ? listLikedShows(accessToken, userId) : Promise.resolve([])
+      },
+      {
+        id: "finds",
+        label: "\u041C\u043E\u0438 \u043D\u0430\u0445\u043E\u0434\u043A\u0438",
+        group: "library",
+        needsAuth: true,
+        listTitle: "\u041C\u043E\u0438 \u043D\u0430\u0445\u043E\u0434\u043A\u0438",
+        emptyHint: "\u041D\u0430\u0445\u043E\u0434\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+        columns: [
+          {
+            header: "\u0422\u0440\u0435\u043A",
+            width: 0,
+            flex: true,
+            value: (find) => dash([find.artist, find.title].filter(Boolean).join(" \u2014 "))
+          },
+          { header: "\u0418\u0437 \u0432\u044B\u043F\u0443\u0441\u043A\u0430", width: 28, value: (find) => dash(find.show?.title) },
+          { header: "\u041C\u0435\u0442\u043A\u0430", width: 8, value: (find) => formatDuration(find.timestampSec) }
+        ],
+        load: ({ accessToken, userId }) => accessToken ? listFinds(accessToken, userId) : Promise.resolve([])
+      },
+      {
+        id: "saved",
+        label: "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435",
+        group: "library",
+        needsAuth: true,
+        listTitle: "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435",
+        emptyHint: "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0433\u043E \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+        columns: [
+          { header: "\u0427\u0442\u043E", width: 0, flex: true, value: (row) => row.title },
+          { header: "\u0422\u0438\u043F", width: 12, value: (row) => row.entityType }
+        ],
+        load: async ({ accessToken, userId }) => {
+          if (!accessToken) return [];
+          const saves = await listSaves(accessToken, userId);
+          const showIds = saves.filter((save) => save.entityType === "show").map((save) => save.entityId);
+          const titles = await resolveSavedShows(accessToken, showIds);
+          return saves.map((save) => ({
+            id: save.entityId,
+            entityType: save.entityType,
+            title: titles.get(save.entityId)?.title ?? save.entityId,
+            isShow: save.entityType === "show" && titles.has(save.entityId)
+          }));
+        }
+      },
+      {
+        id: "following",
+        label: "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438",
+        group: "library",
+        needsAuth: true,
+        listTitle: "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438",
+        emptyHint: "\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+        columns: [
+          { header: "\u041A\u0442\u043E", width: 0, flex: true, value: (row) => row.name },
+          { header: "\u0422\u0438\u043F", width: 12, value: (row) => row.entityType },
+          { header: "", width: 12, value: (row) => row.pending ? "\u043E\u0436\u0438\u0434\u0430\u0435\u0442" : "" }
+        ],
+        load: async ({ accessToken, userId }) => {
+          if (!accessToken) return [];
+          const subscriptions = await listSubscriptions(accessToken, userId);
+          const names = await resolveSubscriptionNames(accessToken, subscriptions);
+          return subscriptions.map((subscription) => ({
+            id: subscription.entityId,
+            entityType: subscription.entityType,
+            name: names.get(subscription.entityId) ?? subscription.entityId,
+            pending: subscription.status === "pending"
+          })).filter((row) => row.name !== row.id);
+        }
+      },
+      {
+        id: "search",
+        label: "\u041F\u043E\u0438\u0441\u043A",
+        group: "tools",
+        listTitle: "\u041F\u043E\u0438\u0441\u043A",
+        emptyHint: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0437\u0430\u043F\u0440\u043E\u0441 \u2014 \u043C\u0438\u043D\u0438\u043C\u0443\u043C \u0434\u0432\u0435 \u0431\u0443\u043A\u0432\u044B",
+        columns: [
+          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => dash(show.title) },
+          {
+            header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B",
+            width: 24,
+            value: (show) => dash(show.artists.map((artist) => artist.name).join(", "))
+          },
+          { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (show) => formatDuration(show.duration) }
+        ],
+        // Поиск грузится по вводу, а не при открытии раздела.
+        load: async () => []
+      }
+    ];
+  }
+});
+
+// src/tui/Sidebar.tsx
+function Sidebar({
+  sections,
+  activeId,
+  selectedIndex,
+  focused,
+  hasAuth,
+  width: width2,
+  height
+}) {
+  const inner = Math.max(8, width2 - 4);
+  let lastGroup;
+  const from = Math.min(Math.max(0, selectedIndex - Math.floor(height / 2)), Math.max(0, sections.length - height));
+  const visible = sections.slice(from, from + height);
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      borderStyle: "round",
+      borderColor: focused ? theme.borderActive : theme.border,
+      paddingX: 1,
+      width: width2,
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
+        visible.map((section, offset) => {
+          const index = from + offset;
+          const isActive = section.id === activeId;
+          const isSelected = index === selectedIndex;
+          const locked = section.needsAuth && !hasAuth;
+          const groupChanged = section.group !== void 0 && section.group !== lastGroup;
+          lastGroup = section.group;
+          return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_react26.default.Fragment, { children: [
+            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+              Text,
+              {
+                color: locked ? theme.muted : isActive ? theme.accent : void 0,
+                bold: isActive,
+                backgroundColor: isSelected && focused ? theme.selectionBg : void 0,
+                children: [
+                  isActive ? "\u25B8 " : "  ",
+                  fit(section.label + (locked ? " \xB7" : ""), inner - 2)
+                ]
+              }
+            )
+          ] }, section.id);
+        })
+      ]
+    }
+  );
+}
+var import_react26, import_jsx_runtime5;
+var init_Sidebar = __esm({
+  async "src/tui/Sidebar.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react26 = __toESM(require_react(), 1);
+    init_theme();
+    import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/usePlayer.ts
 function usePlayer(backend) {
-  const [status, setStatus] = (0, import_react24.useState)(backend?.status() ?? IDLE);
-  const pending = (0, import_react24.useRef)(null);
-  (0, import_react24.useEffect)(() => {
+  const [status, setStatus] = (0, import_react27.useState)(backend?.status() ?? IDLE);
+  const pending = (0, import_react27.useRef)(null);
+  (0, import_react27.useEffect)(() => {
     if (!backend) return;
     const flush = setInterval(() => {
       if (!pending.current) return;
@@ -21526,11 +22057,11 @@ function usePlayer(backend) {
   }, [backend]);
   return status;
 }
-var import_react24, IDLE, THROTTLE_MS;
+var import_react27, IDLE, THROTTLE_MS;
 var init_usePlayer = __esm({
   "src/tui/usePlayer.ts"() {
     "use strict";
-    import_react24 = __toESM(require_react(), 1);
+    import_react27 = __toESM(require_react(), 1);
     IDLE = { positionSec: null, durationSec: null, paused: false, idle: true };
     THROTTLE_MS = 250;
   }
@@ -21541,36 +22072,55 @@ var App_exports = {};
 __export(App_exports, {
   App: () => App2
 });
-function App2({ backend, backendName, accessToken, onExit }) {
+function App2({ backend, backendName, accessToken, userId, onExit }) {
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const status = usePlayer(backend);
-  const width2 = clampSize(stdout?.columns, 80, 40);
-  const height = clampSize(stdout?.rows, 24, 10);
-  const [tab2, setTab] = (0, import_react25.useState)("radio");
-  const [message, setMessage] = (0, import_react25.useState)(null);
-  const [volume, setVolume] = (0, import_react25.useState)(100);
-  const [now, setNow] = (0, import_react25.useState)(null);
-  const [showHelp, setShowHelp] = (0, import_react25.useState)(false);
-  const [radioNow, setRadioNow] = (0, import_react25.useState)(null);
-  const [radioList, setRadioList] = (0, import_react25.useState)([]);
-  const [streamUrl, setStreamUrl] = (0, import_react25.useState)(null);
-  const [shows, setShows] = (0, import_react25.useState)([]);
-  const [tracklist, setTracklist] = (0, import_react25.useState)([]);
-  const [showTracklist, setShowTracklist] = (0, import_react25.useState)(false);
-  const [playlists, setPlaylists] = (0, import_react25.useState)([]);
-  const [likes, setLikes] = (0, import_react25.useState)([]);
-  const [query, setQuery] = (0, import_react25.useState)("");
-  const [typing, setTyping] = (0, import_react25.useState)(false);
-  const [results, setResults] = (0, import_react25.useState)([]);
-  const [selected, setSelected] = (0, import_react25.useState)({
-    radio: 0,
-    shows: 0,
-    library: 0,
-    search: 0
-  });
-  const say = (0, import_react25.useCallback)((text) => setMessage(text), []);
-  (0, import_react25.useEffect)(() => {
+  const width2 = clampSize(stdout?.columns, 100, 40);
+  const height = clampSize(stdout?.rows, 30, 12);
+  const [focus, setFocus] = (0, import_react28.useState)("list");
+  const [sectionIndex, setSectionIndex] = (0, import_react28.useState)(0);
+  const [activeSection, setActiveSection] = (0, import_react28.useState)("radio");
+  const [rowsBySection, setRows] = (0, import_react28.useState)({});
+  const [selectedBySection, setSelected] = (0, import_react28.useState)({});
+  const [loading, setLoading] = (0, import_react28.useState)(null);
+  const [message, setMessage] = (0, import_react28.useState)(null);
+  const [now, setNow] = (0, import_react28.useState)(null);
+  const [volume, setVolume] = (0, import_react28.useState)(100);
+  const [mutedFrom, setMutedFrom] = (0, import_react28.useState)(100);
+  const [showHelp, setShowHelp] = (0, import_react28.useState)(false);
+  const [radioNow, setRadioNow] = (0, import_react28.useState)(null);
+  const [streamUrl, setStreamUrl] = (0, import_react28.useState)(null);
+  const [tracklist, setTracklist] = (0, import_react28.useState)([]);
+  const [detailShow, setDetailShow] = (0, import_react28.useState)(null);
+  const [query, setQuery] = (0, import_react28.useState)("");
+  const [typing, setTyping] = (0, import_react28.useState)(false);
+  const section = sectionById(activeSection);
+  const rows = rowsBySection[activeSection] ?? [];
+  const selected = Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, rows.length - 1));
+  const say = (0, import_react28.useCallback)((text) => setMessage(text), []);
+  const setSelectedFor = (0, import_react28.useCallback)(
+    (id, value) => setSelected((previous) => ({ ...previous, [id]: value })),
+    []
+  );
+  (0, import_react28.useEffect)(() => {
+    if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
+    const spec = sectionById(activeSection);
+    if (spec.needsAuth && !accessToken) return;
+    let cancelled = false;
+    setLoading(activeSection);
+    void spec.load({ accessToken, userId }).then((loaded) => {
+      if (!cancelled) setRows((previous) => ({ ...previous, [activeSection]: loaded }));
+    }).catch((error) => {
+      if (!cancelled) say(`\u0420\u0430\u0437\u0434\u0435\u043B \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043B\u0441\u044F: ${error.message}`);
+    }).finally(() => {
+      if (!cancelled) setLoading(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, accessToken, userId, rowsBySection, say]);
+  (0, import_react28.useEffect)(() => {
     void (async () => {
       const settings = await fetchStationSettings();
       const url = await resolveLiveStream(settings);
@@ -21579,40 +22129,29 @@ function App2({ backend, backendName, accessToken, onExit }) {
         await backend.load(url);
         setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
       } catch (error) {
-        setMessage(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
+        say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
       }
     })();
   }, []);
-  (0, import_react25.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     const refresh = async () => {
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
       setRadioNow(schedule.now);
-      setRadioList([
-        ...schedule.next ? [schedule.next] : [],
-        ...schedule.now ? [schedule.now] : [],
-        ...schedule.history
-      ]);
+      setRows((previous) => ({
+        ...previous,
+        radio: [
+          ...schedule.next ? [{ ...schedule.next, title: `\u0434\u0430\u043B\u044C\u0448\u0435 \xB7 ${formatRadioItem(schedule.next)}` }] : [],
+          ...schedule.now ? [{ ...schedule.now, title: formatRadioItem(schedule.now) }] : [],
+          ...schedule.history.map((item) => ({ ...item, title: formatRadioItem(item) }))
+        ]
+      }));
     };
     void refresh();
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react25.useEffect)(() => {
-    void listShows({ limit: 60, accessToken }).then(setShows).catch(() => setShows([]));
-  }, [accessToken]);
-  (0, import_react25.useEffect)(() => {
-    if (!accessToken) return;
-    void (async () => {
-      const [ownPlaylists, likedShows] = await Promise.all([
-        listPlaylists(accessToken, tokenUserId(accessToken)).catch(() => []),
-        listLikedShows(accessToken, tokenUserId(accessToken)).catch(() => [])
-      ]);
-      setPlaylists(ownPlaylists);
-      setLikes(likedShows);
-    })();
-  }, [accessToken]);
-  (0, import_react25.useEffect)(() => {
+  (0, import_react28.useEffect)(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
     let channelId = null;
@@ -21630,26 +22169,45 @@ function App2({ backend, backendName, accessToken, onExit }) {
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
-  (0, import_react25.useEffect)(() => {
-    if (tab2 !== "search" || query.trim().length < 2) return;
+  (0, import_react28.useEffect)(() => {
+    if (activeSection !== "search") return;
+    if (query.trim().length < 2) {
+      setRows((previous) => ({ ...previous, search: [] }));
+      return;
+    }
     const timer = setTimeout(() => {
-      void searchShows(query.trim(), 40, accessToken).then(setResults).catch(() => setResults([]));
+      void searchShows(query.trim(), 50, accessToken).then((found) => setRows((previous) => ({ ...previous, search: found }))).catch(() => setRows((previous) => ({ ...previous, search: [] })));
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, tab2, accessToken]);
-  const playRadio = (0, import_react25.useCallback)(async () => {
+  }, [query, activeSection, accessToken]);
+  const selectedRow = rows[selected];
+  (0, import_react28.useEffect)(() => {
+    const show = asShow(activeSection, selectedRow);
+    if (!show) {
+      setDetailShow(null);
+      setTracklist([]);
+      return;
+    }
+    setDetailShow(show);
+    let cancelled = false;
+    void fetchTracklist(show, accessToken).then((items) => {
+      if (!cancelled) setTracklist(items);
+    }).catch(() => void 0);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, selectedRow, accessToken]);
+  const playRadio = (0, import_react28.useCallback)(async () => {
     if (!streamUrl) return;
-    say("\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0435\u043C\u0441\u044F \u043A \u044D\u0444\u0438\u0440\u0443\u2026");
     try {
       await backend.load(streamUrl);
       setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
-      setShowTracklist(false);
       say(null);
     } catch (error) {
       say(`\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
     }
   }, [backend, streamUrl, say]);
-  const playShow = (0, import_react25.useCallback)(
+  const playShow = (0, import_react28.useCallback)(
     async (show) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${show.title ?? "\u0432\u044B\u043F\u0443\u0441\u043A"}\xBB\u2026`);
       const stream = await fetchShowStream(show.id, accessToken).catch(() => null);
@@ -21671,148 +22229,148 @@ function App2({ backend, backendName, accessToken, onExit }) {
         totalSec: show.duration
       });
       say(null);
-      const items = await fetchTracklist(show, accessToken).catch(() => []);
-      setTracklist(items);
-      setShowTracklist(items.length > 0);
     },
     [backend, accessToken, say]
   );
-  const currentRows = (0, import_react25.useMemo)(() => {
-    switch (tab2) {
-      case "radio":
-        return radioList;
-      case "shows":
-        return showTracklist && tracklist.length > 0 ? tracklist : shows;
-      case "library":
-        return likes.length > 0 ? likes : playlists;
-      case "search":
-        return results;
-    }
-  }, [tab2, radioList, shows, tracklist, showTracklist, likes, playlists, results]);
-  const selectedIndex = Math.min(selected[tab2], Math.max(0, currentRows.length - 1));
-  const playingIndex = (0, import_react25.useMemo)(() => {
-    if (tab2 === "shows" && showTracklist) {
-      return currentTrackIndex(tracklist, status.positionSec);
-    }
-    if (tab2 === "shows" && now?.showId) {
-      return shows.findIndex((show) => show.id === now.showId);
-    }
-    if (tab2 === "radio" && radioNow) {
-      return radioList.findIndex((item) => item === radioNow);
-    }
-    return -1;
-  }, [tab2, showTracklist, tracklist, status.positionSec, now?.showId, shows, radioNow, radioList]);
-  const move = (0, import_react25.useCallback)(
-    (delta) => {
-      setSelected((previous) => {
-        const count = currentRows.length;
-        if (count === 0) return previous;
-        const next = Math.min(count - 1, Math.max(0, (previous[tab2] ?? 0) + delta));
-        return { ...previous, [tab2]: next };
-      });
+  const playById = (0, import_react28.useCallback)(
+    async (showId) => {
+      const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
+      if (show) await playShow(show);
+      else say("\u0412\u044B\u043F\u0443\u0441\u043A \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u043B\u0441\u044F");
     },
-    [currentRows.length, tab2]
+    [accessToken, playShow, say]
   );
-  const activate = (0, import_react25.useCallback)(async () => {
-    const row = currentRows[selectedIndex];
+  const activate = (0, import_react28.useCallback)(async () => {
+    const row = rows[selected];
     if (!row) return;
-    if (tab2 === "radio") {
-      const item = row;
-      const slug = item.show?.slug;
-      if (!slug) {
-        await playRadio();
-        return;
-      }
-      const found = await searchShows(item.show?.title ?? "", 5, accessToken).catch(() => []);
-      const match = found.find((candidate) => candidate.slug === slug) ?? found[0];
-      if (match) await playShow(match);
-      else await playRadio();
-      return;
-    }
-    if (tab2 === "shows") {
-      if (showTracklist) {
+    switch (activeSection) {
+      case "radio": {
         const item = row;
-        if (item.timestamp_sec !== null && backend.canSeek) {
-          await backend.seek(item.timestamp_sec, "absolute");
+        const slug = item.show?.slug;
+        if (!slug) return playRadio();
+        const show = await findShow(parseEntityParam(slug), accessToken).catch(() => null);
+        return show ? playShow(show) : playRadio();
+      }
+      case "shows":
+      case "search":
+        return playShow(row);
+      case "likes":
+        return playById(row.id);
+      case "finds": {
+        const find = row;
+        if (!find.show) return;
+        await playById(find.show.id);
+        if (find.timestampSec !== null && backend.canSeek) {
+          await backend.seek(find.timestampSec, "absolute");
         }
         return;
       }
-      await playShow(row);
-      return;
+      case "saved": {
+        const saved = row;
+        if (saved.isShow) return playById(saved.id);
+        say(`\xAB${saved.entityType}\xBB \u0438\u0437 \u0442\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u0430 \u043F\u043E\u043A\u0430 \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u0442\u044C`);
+        return;
+      }
+      case "artists": {
+        const artist = row;
+        const found = await showsByArtist(artist.id, accessToken).catch(() => []);
+        const first = found[0];
+        if (!first) return say(`\u0423 \xAB${artist.name}\xBB \u043D\u0435\u0442 \u0432\u044B\u043F\u0443\u0441\u043A\u043E\u0432`);
+        return playById(first.id);
+      }
+      case "playlists": {
+        const playlist = row;
+        if (!accessToken) return;
+        const items = await listPlaylistItems(accessToken, playlist.id).catch(() => []);
+        const firstShow = items.find((item) => item.kind === "show");
+        if (!firstShow) return say("\u0412 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u0435 \u043D\u0435\u0442 \u0432\u044B\u043F\u0443\u0441\u043A\u043E\u0432");
+        return playById(firstShow.id);
+      }
+      default:
+        say("\u0417\u0434\u0435\u0441\u044C \u043F\u043E\u043A\u0430 \u043D\u0435\u0447\u0435\u0433\u043E \u0438\u0433\u0440\u0430\u0442\u044C");
     }
-    if (tab2 === "library" && likes.length > 0) {
-      const liked = row;
-      const match = shows.find((show) => show.id === liked.id);
-      await playShow(
-        match ?? {
-          id: liked.id,
-          public_id: liked.public_id,
-          slug: liked.slug,
-          title: liked.title,
-          description: null,
-          cover_url: null,
-          duration: liked.duration,
-          status: "published",
-          published_at: null,
-          tracklist_disabled: null,
-          artists: liked.artists.map((name) => ({ id: name, name, slug: null }))
-        }
-      );
-      return;
-    }
-    if (tab2 === "search") await playShow(row);
-  }, [currentRows, selectedIndex, tab2, showTracklist, backend, playRadio, playShow, accessToken, likes.length, shows]);
+  }, [rows, selected, activeSection, accessToken, backend, playRadio, playShow, playById, say]);
+  const moveSelection = (0, import_react28.useCallback)(
+    (delta) => {
+      if (focus === "sidebar") {
+        setSectionIndex((previous) => Math.min(SECTIONS2.length - 1, Math.max(0, previous + delta)));
+        return;
+      }
+      setSelectedFor(activeSection, Math.min(rows.length - 1, Math.max(0, selected + delta)));
+    },
+    [focus, activeSection, rows.length, selected, setSelectedFor]
+  );
+  const openSection = (0, import_react28.useCallback)((index) => {
+    const target = SECTIONS2[index];
+    if (!target) return;
+    setSectionIndex(index);
+    setActiveSection(target.id);
+    setFocus("list");
+    setTyping(target.id === "search");
+  }, []);
   use_input_default((input, key) => {
     if (typing) {
-      if (key.escape || key.return) {
-        setTyping(false);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setQuery((value) => value.slice(0, -1));
-        return;
-      }
+      if (key.escape || key.return) return setTyping(false);
+      if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
       if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
       return;
     }
-    if (showHelp) {
-      setShowHelp(false);
-      return;
-    }
+    if (showHelp) return setShowHelp(false);
     if (input === "q" || key.ctrl && input === "c") {
       void onExit().then(() => exit());
       return;
     }
-    if (input === "?") {
-      setShowHelp(true);
+    if (input === "?") return setShowHelp(true);
+    if (key.tab) {
+      const order = ["sidebar", "list", "details"];
+      const index = order.indexOf(focus);
+      setFocus(order[(index + (key.shift ? order.length - 1 : 1)) % order.length] ?? "list");
       return;
     }
-    if (input === "1") setTab("radio");
-    if (input === "2") setTab("shows");
-    if (input === "3") setTab("library");
-    if (input === "4") {
-      setTab("search");
-      setTyping(true);
+    if (input === "h") return setFocus("sidebar");
+    if (input === "l") return setFocus("list");
+    const digit = Number.parseInt(input, 10);
+    if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(9, SECTIONS2.length)) {
+      return openSection(digit - 1);
     }
-    if (key.tab) {
-      const index = TABS.findIndex((candidate) => candidate.id === tab2);
-      const next = TABS[(index + 1) % TABS.length];
-      if (next) setTab(next.id);
+    if (input === "j" || key.downArrow) return moveSelection(1);
+    if (input === "k" || key.upArrow) return moveSelection(-1);
+    if (key.pageDown) return moveSelection(10);
+    if (key.pageUp) return moveSelection(-10);
+    if (input === "g") {
+      if (focus === "sidebar") setSectionIndex(0);
+      else setSelectedFor(activeSection, 0);
+      return;
     }
-    if (input === "j" || key.downArrow) move(1);
-    if (input === "k" || key.upArrow) move(-1);
-    if (input === "g") setSelected((previous) => ({ ...previous, [tab2]: 0 }));
-    if (input === "G") setSelected((previous) => ({ ...previous, [tab2]: currentRows.length - 1 }));
-    if (key.pageDown) move(10);
-    if (key.pageUp) move(-10);
-    if (key.return) void activate();
+    if (input === "G") {
+      if (focus === "sidebar") setSectionIndex(SECTIONS2.length - 1);
+      else setSelectedFor(activeSection, rows.length - 1);
+      return;
+    }
+    if (key.return) {
+      if (focus === "sidebar") return openSection(sectionIndex);
+      void activate();
+      return;
+    }
+    if (input === " ") return void backend.setPaused(!status.paused);
+    if (input === "r") return void playRadio();
+    if (input === "m" && backend.canSetVolume) {
+      setVolume((value) => {
+        const next = value === 0 ? mutedFrom || 100 : 0;
+        setMutedFrom(value === 0 ? 0 : value);
+        void backend.setVolume(next);
+        return next;
+      });
+      return;
+    }
+    if (input === "n" || input === "p") {
+      say("\u041E\u0447\u0435\u0440\u0435\u0434\u044C \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u043F\u043E\u0437\u0436\u0435 \u2014 \u043F\u043E\u043A\u0430 \u0432\u044B\u0431\u0438\u0440\u0430\u0439\u0442\u0435 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435");
+      return;
+    }
     if (input === "/") {
-      setTab("search");
-      setTyping(true);
+      const index = SECTIONS2.findIndex((candidate) => candidate.id === "search");
+      return openSection(index);
     }
-    if (input === " ") void backend.setPaused(!status.paused);
-    if (input === "t" && tracklist.length > 0) setShowTracklist((value) => !value);
-    if (input === "r") void playRadio();
     if (key.rightArrow && backend.canSeek && now?.kind === "show") void backend.seek(30, "relative");
     if (key.leftArrow && backend.canSeek && now?.kind === "show") void backend.seek(-30, "relative");
     if ((input === "+" || input === "=") && backend.canSetVolume) {
@@ -21830,19 +22388,48 @@ function App2({ backend, backendName, accessToken, onExit }) {
       });
     }
   });
-  const info = (0, import_react25.useMemo)(() => {
+  const playingIndex = (0, import_react28.useMemo)(() => {
+    if (activeSection === "radio" && radioNow) {
+      return rows.findIndex((item) => item.played_at === radioNow.played_at);
+    }
+    if (!now?.showId) return -1;
+    if (activeSection === "shows" || activeSection === "search") {
+      return rows.findIndex((show) => show.id === now.showId);
+    }
+    if (activeSection === "likes") return rows.findIndex((show) => show.id === now.showId);
+    return -1;
+  }, [activeSection, rows, radioNow, now?.showId]);
+  const details = (0, import_react28.useMemo)(() => {
+    const row = rows[selected];
+    if (!row) return null;
+    if (detailShow) {
+      const isPlaying = now?.showId === detailShow.id;
+      const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
+      return {
+        title: detailShow.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+        subtitle: sameText(artistLine, detailShow.title) ? null : artistLine || null,
+        facts: [
+          ["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C", formatDuration(detailShow.duration)],
+          ["\u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D", detailShow.published_at?.slice(0, 10) ?? "\u2014"]
+        ],
+        description: detailShow.description,
+        tracklist,
+        // Подсветка трека — только у ИГРАЮЩЕГО выпуска: у чужого позиция плеера
+        // к его треклисту отношения не имеет.
+        playingTrack: isPlaying ? currentTrackIndex(tracklist, status.positionSec) : -1
+      };
+    }
+    return describeRow(activeSection, row);
+  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection]);
+  const info = (0, import_react28.useMemo)(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
-        subtitle: radioNow?.show?.artists?.join(", ") ?? null,
-        note: radioNow?.show?.description?.replace(/\s+/g, " ").trim() ?? null,
-        // У эфира позиция — это «сколько идёт текущий выпуск», её знает
-        // расписание, а не плеер: у бесконечного потока своей позиции нет.
+        subtitle: radioNow?.show?.description?.replace(/\s+/g, " ").trim() ?? null,
+        // Позиция эфира — «сколько идёт текущий выпуск»: её знает расписание,
+        // а не плеер, у бесконечного потока своей позиции нет.
         position: elapsedSec(radioNow),
         total: radioNow?.duration ?? null,
-        backend: backendName,
-        volume,
-        badge: null,
         live: true
       };
     }
@@ -21850,265 +22437,199 @@ function App2({ backend, backendName, accessToken, onExit }) {
       return {
         title: now.title,
         subtitle: now.subtitle,
-        note: null,
         position: status.positionSec,
         total: status.durationSec ?? now.totalSec,
-        backend: backendName,
-        volume,
-        badge: null,
         live: false
       };
     }
-    return {
-      title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442",
-      subtitle: null,
-      note: "r \u2014 \u044D\u0444\u0438\u0440, Enter \u2014 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435",
-      position: null,
-      total: null,
-      backend: backendName,
-      volume,
-      badge: null,
-      live: false
-    };
-  }, [now, radioNow, status, backendName, volume]);
-  const listHeight = Math.max(3, height - 14);
-  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Help, { width: width2 });
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PlaybackPanel, { info, state: status, width: width2 }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { paddingX: 1, children: TABS.map((candidate, index) => {
-      const active = candidate.id === tab2;
-      const locked = candidate.needsAuth && !accessToken;
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
-        Text,
+    return { title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442", subtitle: null, position: null, total: null, live: false };
+  }, [now, radioNow, status]);
+  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(HelpOverlay, { width: width2 });
+  const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
+  const bodyHeight = Math.max(8, height - 6);
+  const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        Sidebar,
         {
-          color: active ? theme.accent : locked ? theme.muted : void 0,
-          bold: active,
-          underline: active,
-          children: [
-            index > 0 ? "   " : "",
-            index + 1,
-            " ",
-            candidate.label,
-            locked ? " (\u0432\u0445\u043E\u0434)" : ""
-          ]
-        },
-        candidate.id
-      );
-    }) }),
-    renderList({
-      tab: tab2,
-      rows: currentRows,
-      selected: selectedIndex,
-      playing: playingIndex,
-      height: listHeight,
-      width: width2,
-      showTracklist,
-      query,
-      typing,
-      hasAuth: !!accessToken,
-      likesCount: likes.length
-    }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 t \u2014 \u0442\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \xB7 / \u2014 \u043F\u043E\u0438\u0441\u043A \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
+          sections: SECTIONS2.map((candidate, index) => ({
+            id: candidate.id,
+            label: index < 9 ? `${index + 1} ${candidate.label}` : `  ${candidate.label}`,
+            needsAuth: candidate.needsAuth,
+            group: candidate.group
+          })),
+          activeId: activeSection,
+          selectedIndex: sectionIndex,
+          focused: focus === "sidebar",
+          hasAuth: !!accessToken,
+          width: SIDEBAR_WIDTH,
+          height: bodyHeight - 2
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          ListPanel,
+          {
+            title: activeSection === "search" ? `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${section.listTitle} \u2014 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026` : section.listTitle,
+            rows,
+            columns: section.columns,
+            selected,
+            playing: playingIndex,
+            height: listHeight,
+            width: contentWidth,
+            focused: focus === "list",
+            emptyHint: section.needsAuth && !accessToken ? "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434: surprise login" : section.emptyHint
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          DetailsPanel,
+          {
+            details,
+            focused: focus === "details",
+            width: contentWidth,
+            height: Math.max(6, bodyHeight - listHeight - 2)
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      PlayerBar,
+      {
+        title: info.title,
+        subtitle: info.subtitle,
+        position: info.position,
+        total: info.total,
+        live: info.live,
+        state: status,
+        backend: backendName,
+        volume,
+        badge: null,
+        width: width2
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "Tab/h/l \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 / \u2014 \u043F\u043E\u0438\u0441\u043A \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
   ] });
+}
+function dropIfSame(value, title) {
+  const text = (value ?? "").trim();
+  return !text || sameText(text, title) ? null : text;
+}
+function sameText(a, b) {
+  return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 }
 function clampSize(value, fallback, minimum) {
   return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
-function tokenUserId(accessToken) {
-  const segment = accessToken.split(".")[1];
-  if (!segment) return "";
-  try {
-    const json = JSON.parse(Buffer.from(segment.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
-    return String(json.sub ?? "");
-  } catch {
-    return "";
+function asShow(sectionId, row) {
+  if (!row) return null;
+  if (sectionId === "shows" || sectionId === "search") return row;
+  return null;
+}
+function describeRow(sectionId, row) {
+  const empty = { tracklist: [], playingTrack: -1 };
+  switch (sectionId) {
+    case "artists": {
+      const artist = row;
+      return {
+        title: artist.name,
+        subtitle: artist.is_resident ? "\u0440\u0435\u0437\u0438\u0434\u0435\u043D\u0442" : null,
+        facts: [],
+        description: artist.bio,
+        ...empty
+      };
+    }
+    case "hosts": {
+      const host = row;
+      return {
+        title: host.name,
+        subtitle: host.is_verified ? "\u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043D\u043D\u044B\u0439 \u0430\u0432\u0442\u043E\u0440" : null,
+        facts: [["\u0441\u043B\u0430\u0433", host.slug]],
+        description: host.bio,
+        ...empty
+      };
+    }
+    case "releases": {
+      const release = row;
+      return {
+        title: release.title,
+        subtitle: dropIfSame(release.artists.join(", "), release.title),
+        facts: [
+          ["\u0434\u0430\u0442\u0430", release.release_date ?? "\u2014"],
+          ["\u0442\u0438\u043F", release.type ?? "\u2014"]
+        ],
+        description: null,
+        ...empty
+      };
+    }
+    case "likes": {
+      const show = row;
+      return {
+        title: show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+        subtitle: dropIfSame(show.artists.join(", "), show.title),
+        facts: [["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C", formatDuration(show.duration)]],
+        description: null,
+        ...empty
+      };
+    }
+    case "finds": {
+      const find = row;
+      return {
+        title: [find.artist, find.title].filter(Boolean).join(" \u2014 ") || "\u041D\u0430\u0445\u043E\u0434\u043A\u0430",
+        subtitle: find.show?.title ?? null,
+        facts: [["\u043C\u0435\u0442\u043A\u0430", formatDuration(find.timestampSec)]],
+        description: null,
+        ...empty
+      };
+    }
+    case "playlists": {
+      const playlist = row;
+      return {
+        title: playlist.title,
+        subtitle: playlist.is_public === false ? "\u043F\u0440\u0438\u0432\u0430\u0442\u043D\u044B\u0439" : null,
+        facts: [["\u0442\u0440\u0435\u043A\u043E\u0432", String(playlist.itemCount)]],
+        description: playlist.description,
+        ...empty
+      };
+    }
+    case "radio": {
+      const item = row;
+      return {
+        title: formatRadioItem(item),
+        subtitle: dropIfSame(item.show?.artists?.join(", "), formatRadioItem(item)),
+        facts: [["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C", formatDuration(item.duration)]],
+        description: item.show?.description ?? null,
+        ...empty
+      };
+    }
+    default:
+      return null;
   }
 }
-function renderList(params) {
-  const { tab: tab2, rows, selected, playing, height, width: width2, showTracklist, query, typing, hasAuth } = params;
-  if (tab2 === "radio") {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      ListPanel,
-      {
-        title: "\u042D\u0444\u0438\u0440 \u2014 \u0447\u0442\u043E \u0438\u0433\u0440\u0430\u043B\u043E \u0438 \u0447\u0442\u043E \u0434\u0430\u043B\u044C\u0448\u0435",
-        rows,
-        selected,
-        playing,
-        height,
-        width: width2,
-        focused: true,
-        emptyHint: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E",
-        columns: [
-          { header: "", width: 6, value: (item) => item === rows[playing] ? "\u0441\u0435\u0439\u0447\u0430\u0441" : "" },
-          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (item) => formatRadioItem(item) },
-          { header: "\u0414\u043B\u0438\u0442.", width: 7, value: (item) => formatDuration(item.duration) }
-        ]
-      }
-    );
-  }
-  if (tab2 === "shows" && showTracklist) {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      ListPanel,
-      {
-        title: "\u0422\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \u2014 Enter \u043F\u0440\u044B\u0433\u0430\u0435\u0442 \u043D\u0430 \u0442\u0430\u0439\u043C\u043A\u043E\u0434",
-        rows,
-        selected,
-        playing,
-        height,
-        width: width2,
-        focused: true,
-        emptyHint: "\u0423 \u0432\u044B\u043F\u0443\u0441\u043A\u0430 \u043D\u0435\u0442 \u0442\u0440\u0435\u043A\u043B\u0438\u0441\u0442\u0430",
-        columns: [
-          { header: "#", width: 3, value: (_item, index) => String(index + 1) },
-          { header: "\u0412\u0440\u0435\u043C\u044F", width: 7, value: (item) => formatDuration(item.timestamp_sec) },
-          { header: "\u0410\u0440\u0442\u0438\u0441\u0442", width: 24, value: (item) => item.artist ?? "\u2014" },
-          { header: "\u0422\u0440\u0435\u043A", width: 0, flex: true, value: (item) => item.title ?? "\u2014" }
-        ]
-      }
-    );
-  }
-  if (tab2 === "shows") {
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      ListPanel,
-      {
-        title: "\u0412\u044B\u043F\u0443\u0441\u043A\u0438 \u2014 t \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442 \u0442\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \u0438\u0433\u0440\u0430\u044E\u0449\u0435\u0433\u043E",
-        rows,
-        selected,
-        playing,
-        height,
-        width: width2,
-        focused: true,
-        emptyHint: "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0443\u0441\u0442",
-        columns: [
-          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F" },
-          { header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B", width: 26, value: (show) => show.artists.map((a) => a.name).join(", ") },
-          { header: "\u0414\u043B\u0438\u0442.", width: 7, value: (show) => formatDuration(show.duration) }
-        ]
-      }
-    );
-  }
-  if (tab2 === "library") {
-    if (!hasAuth) {
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-        ListPanel,
-        {
-          title: "\u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430",
-          rows: [],
-          selected: 0,
-          playing: -1,
-          height,
-          width: width2,
-          focused: true,
-          emptyHint: "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434: surprise login",
-          columns: []
-        }
-      );
-    }
-    if (params.likesCount > 0) {
-      return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-        ListPanel,
-        {
-          title: "\u041B\u0430\u0439\u043A\u0438",
-          rows,
-          selected,
-          playing,
-          height,
-          width: width2,
-          focused: true,
-          emptyHint: "\u041B\u0430\u0439\u043A\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
-          columns: [
-            { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F" },
-            { header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B", width: 26, value: (show) => show.artists.join(", ") },
-            { header: "\u0414\u043B\u0438\u0442.", width: 7, value: (show) => formatDuration(show.duration) }
-          ]
-        }
-      );
-    }
-    return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      ListPanel,
-      {
-        title: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B",
-        rows,
-        selected,
-        playing: -1,
-        height,
-        width: width2,
-        focused: true,
-        emptyHint: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
-        columns: [
-          { header: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442", width: 0, flex: true, value: (playlist) => playlist.title },
-          { header: "\u0422\u0440\u0435\u043A\u043E\u0432", width: 7, value: (playlist) => String(playlist.itemCount) }
-        ]
-      }
-    );
-  }
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-    ListPanel,
-    {
-      title: `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? " \u258C" : ""}`,
-      rows,
-      selected,
-      playing,
-      height,
-      width: width2,
-      focused: true,
-      emptyHint: query.length < 2 ? "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043C\u0438\u043D\u0438\u043C\u0443\u043C \u0434\u0432\u0435 \u0431\u0443\u043A\u0432\u044B" : "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
-      columns: [
-        { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (show) => show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F" },
-        { header: "\u0410\u0440\u0442\u0438\u0441\u0442\u044B", width: 26, value: (show) => show.artists.map((a) => a.name).join(", ") },
-        { header: "\u0414\u043B\u0438\u0442.", width: 7, value: (show) => formatDuration(show.duration) }
-      ]
-    }
-  );
-}
-function Help({ width: width2 }) {
-  const rows = [
-    ["j / k, \u2191 / \u2193", "\u043F\u043E \u0441\u043F\u0438\u0441\u043A\u0443"],
-    ["g / G", "\u0432 \u043D\u0430\u0447\u0430\u043B\u043E / \u0432 \u043A\u043E\u043D\u0435\u0446"],
-    ["PgUp / PgDn", "\u043D\u0430 \u0434\u0435\u0441\u044F\u0442\u044C \u0441\u0442\u0440\u043E\u043A"],
-    ["Enter", "\u0438\u0433\u0440\u0430\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0435 (\u0432 \u0442\u0440\u0435\u043A\u043B\u0438\u0441\u0442\u0435 \u2014 \u043F\u0440\u044B\u0433\u043D\u0443\u0442\u044C \u043D\u0430 \u0442\u0430\u0439\u043C\u043A\u043E\u0434)"],
-    ["space", "\u043F\u0430\u0443\u0437\u0430"],
-    ["\u2190 / \u2192", "\u043F\u0435\u0440\u0435\u043C\u043E\u0442\u043A\u0430 \u043D\u0430 30 \u0441\u0435\u043A\u0443\u043D\u0434 (\u0442\u043E\u043B\u044C\u043A\u043E \u0443 \u0432\u044B\u043F\u0443\u0441\u043A\u043E\u0432)"],
-    ["+ / -", "\u0433\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u044C"],
-    ["r", "\u0432\u0435\u0440\u043D\u0443\u0442\u044C\u0441\u044F \u0432 \u044D\u0444\u0438\u0440"],
-    ["t", "\u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C/\u0441\u043A\u0440\u044B\u0442\u044C \u0442\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \u0438\u0433\u0440\u0430\u044E\u0449\u0435\u0433\u043E \u0432\u044B\u043F\u0443\u0441\u043A\u0430"],
-    ["1\u20264, Tab", "\u0440\u0430\u0437\u0434\u0435\u043B\u044B"],
-    ["/", "\u043F\u043E\u0438\u0441\u043A"],
-    ["?", "\u044D\u0442\u0430 \u0441\u043F\u0440\u0430\u0432\u043A\u0430"],
-    ["q", "\u0432\u044B\u0445\u043E\u0434"]
-  ];
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.accent, paddingX: 2, paddingY: 1, width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: theme.accent, children: "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435" }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: rows.map(([keys, what]) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.accent, children: keys.padEnd(16) }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { children: what })
-    ] }, keys)) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.muted, children: "\u041B\u044E\u0431\u0430\u044F \u043A\u043B\u0430\u0432\u0438\u0448\u0430 \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) })
-  ] });
-}
-var import_react25, import_jsx_runtime3, TABS;
+var import_react28, import_jsx_runtime6, SIDEBAR_WIDTH;
 var init_App2 = __esm({
   async "src/tui/App.tsx"() {
     "use strict";
     await init_build2();
-    import_react25 = __toESM(require_react(), 1);
+    import_react28 = __toESM(require_react(), 1);
     init_radio();
+    init_catalog();
     init_shows();
     init_library();
     init_config();
     init_format();
     init_ids();
+    init_publicId();
+    await init_DetailsPanel();
+    await init_HelpOverlay();
     await init_ListPanel();
-    await init_PlaybackPanel();
+    await init_PlayerBar();
+    init_sections();
+    await init_Sidebar();
     init_theme();
     init_usePlayer();
-    import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
-    TABS = [
-      { id: "radio", label: "\u042D\u0444\u0438\u0440" },
-      { id: "shows", label: "\u0412\u044B\u043F\u0443\u0441\u043A\u0438" },
-      { id: "library", label: "\u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430", needsAuth: true },
-      { id: "search", label: "\u041F\u043E\u0438\u0441\u043A" }
-    ];
+    import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+    SIDEBAR_WIDTH = 24;
   }
 });
 
@@ -22395,9 +22916,9 @@ function width() {
   return Math.max(40, Math.min(terminalWidth(), 100));
 }
 function playlistLabel(playlist) {
-  const mark2 = playlist.is_system ? dim(" (\u0441\u0438\u0441\u0442\u0435\u043C\u043D\u044B\u0439)") : "";
+  const mark = playlist.is_system ? dim(" (\u0441\u0438\u0441\u0442\u0435\u043C\u043D\u044B\u0439)") : "";
   const visibility = playlist.is_public === false ? dim(" \xB7 \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u044B\u0439") : "";
-  return `${playlist.title}${mark2}${visibility}`;
+  return `${playlist.title}${mark}${visibility}`;
 }
 async function renderPlaylists(token, userId, asJson) {
   const playlists = await listPlaylists(token, userId);
@@ -22879,45 +23400,7 @@ async function fetchPreviewUrls(trackIds, accessToken) {
 
 // src/commands/play.ts
 init_format();
-
-// src/lib/publicId.ts
-function parseEntityParam(param) {
-  const isNumeric = !!param && /^\d+$/.test(param);
-  return {
-    isNumeric,
-    publicId: isNumeric ? Number(param) : null,
-    slug: isNumeric ? null : param ?? null
-  };
-}
-var ROUTES = [
-  { prefixes: ["episodes"], kind: "show" },
-  { prefixes: ["release", "releases"], kind: "release" },
-  { prefixes: ["artist"], kind: "artist" },
-  { prefixes: ["author"], kind: "author" },
-  { prefixes: ["playlist"], kind: "playlist" },
-  { prefixes: ["lists"], kind: "list" },
-  { prefixes: ["shows"], kind: "program" }
-];
-function parseSurpriseLink(input) {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  let url;
-  try {
-    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
-  } catch {
-    return null;
-  }
-  const host = url.hostname.replace(/^www\./i, "").toLowerCase();
-  if (host !== "surprise.fm") return null;
-  const segments = url.pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return null;
-  const path = segments[0] === "store" ? segments.slice(1) : segments;
-  const [head, tail] = path;
-  if (!head || !tail) return null;
-  if (head === "track") return { kind: "track", param: parseEntityParam(tail) };
-  const route = ROUTES.find((candidate) => candidate.prefixes.includes(head));
-  return route ? { kind: route.kind, param: parseEntityParam(tail) } : null;
-}
+init_publicId();
 
 // src/player/detect.ts
 import { execFile } from "node:child_process";
@@ -23822,8 +24305,8 @@ async function resolveShow(input, accessToken) {
     process.stdout.write(`${dim(`\u041D\u0430\u0448\u043B\u0438 ${found.length}, \u0438\u0433\u0440\u0430\u0435\u043C \u043F\u0435\u0440\u0432\u044B\u0439:`)}
 `);
     for (const [index, show] of found.slice(0, 5).entries()) {
-      const mark2 = index === 0 ? cyan("\u25B8") : " ";
-      process.stdout.write(`${mark2} ${truncate(showTitle(show), 70)}
+      const mark = index === 0 ? cyan("\u25B8") : " ";
+      process.stdout.write(`${mark} ${truncate(showTitle(show), 70)}
 `);
     }
   }
@@ -24092,17 +24575,18 @@ async function tuiCommand() {
     );
   }
   const session = await getValidSession();
-  const [{ render: render2 }, React13, { App: App3 }] = await Promise.all([
+  const [{ render: render2 }, React16, { App: App3 }] = await Promise.all([
     init_build2().then(() => build_exports),
     Promise.resolve().then(() => __toESM(require_react(), 1)),
     init_App2().then(() => App_exports)
   ]);
   await backend.start();
   const instance = render2(
-    React13.createElement(App3, {
+    React16.createElement(App3, {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,
+      userId: session?.user_id ?? "",
       onExit: async () => {
         await backend.stop().catch(() => {
         });

@@ -1,10 +1,13 @@
 /**
- * Полноэкранный интерфейс: панель воспроизведения сверху, список снизу,
- * вкладки по разделам.
+ * Многопанельный интерфейс: разделы слева, список справа, подробности под ним,
+ * плеер внизу во всю ширину.
  *
- * Выбранная строка и играющая — разные состояния, и оба видны одновременно:
- * человек ходит по списку, пока играет что-то другое. Это главное, чего не
- * может построчный режим.
+ * Три состояния намеренно разведены и видны одновременно:
+ *   активный РАЗДЕЛ  — что открыто;
+ *   ВЫБРАННАЯ строка — куда смотрит человек;
+ *   ИГРАЮЩЕЕ         — что звучит.
+ * Смешать их — значит заставить прерывать музыку ради просмотра каталога.
+ * Ровно этого не умеет построчный режим.
  */
 
 import { Box, Text, useApp, useInput, useStdout } from "ink";
@@ -22,40 +25,37 @@ import {
   SCHEDULE_INTERVAL_MS,
   type RadioItem,
 } from "../api/radio.ts";
+import { showsByArtist, type Artist, type Host, type Release } from "../api/catalog.ts";
 import {
   currentTrackIndex,
   fetchShowStream,
   fetchTracklist,
-  listShows,
+  findShow,
   searchShows,
   type Show,
   type TracklistItem,
 } from "../api/shows.ts";
-import { listLikedShows, listPlaylists, type LikedShow, type PlaylistSummary } from "../api/library.ts";
+import { listPlaylistItems, type Find, type LikedShow, type PlaylistSummary } from "../api/library.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
 import { getSessionId } from "../lib/ids.ts";
+import { parseEntityParam } from "../lib/publicId.ts";
 import type { AudioBackend } from "../player/backend.ts";
+import { DetailsPanel, type Details } from "./DetailsPanel.tsx";
+import { HelpOverlay } from "./HelpOverlay.tsx";
 import { ListPanel } from "./ListPanel.tsx";
-import { PlaybackPanel, type PlaybackInfo } from "./PlaybackPanel.tsx";
+import { PlayerBar } from "./PlayerBar.tsx";
+import { SECTIONS, sectionById, type SavedRow, type SectionId } from "./sections.ts";
+import { Sidebar } from "./Sidebar.tsx";
 import { theme } from "./theme.ts";
 import { usePlayer } from "./usePlayer.ts";
 
-type Tab = "radio" | "shows" | "library" | "search";
+type Focus = "sidebar" | "list" | "details";
 
-const TABS: Array<{ id: Tab; label: string; needsAuth?: boolean }> = [
-  { id: "radio", label: "Эфир" },
-  { id: "shows", label: "Выпуски" },
-  { id: "library", label: "Библиотека", needsAuth: true },
-  { id: "search", label: "Поиск" },
-];
-
-/** Что сейчас в плеере — нужно и для панели, и чтобы подсветить строку списка. */
 interface NowPlaying {
   kind: "radio" | "show";
   title: string;
   subtitle: string | null;
-  /** id выпуска — по нему находим играющую строку в списке. */
   showId: string | null;
   totalSec: number | null;
 }
@@ -64,55 +64,86 @@ export interface AppProps {
   backend: AudioBackend;
   backendName: string;
   accessToken: string | null;
-  /** Куда уходить при выходе — чтобы снять присутствие в эфире. */
+  userId: string;
   onExit: () => Promise<void>;
 }
 
-export function App({ backend, backendName, accessToken, onExit }: AppProps): React.ReactElement {
+// Ширина под самое длинное название раздела с номером: «6 Моя коллекция».
+// На 20 колонках половина пунктов обрезалась в многоточие.
+const SIDEBAR_WIDTH = 24;
+
+export function App({ backend, backendName, accessToken, userId, onExit }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const status = usePlayer(backend);
 
-  // Ноль — реальное значение columns там, где размер терминала неизвестен:
-  // псевдотерминал без управляющего tty, запуск под supervisor, некоторые
-  // эмуляторы при старте. Без защиты интерфейс схлопывался в колонку шириной в
-  // один символ — рамки есть, содержимого не прочесть.
-  const width = clampSize(stdout?.columns, 80, 40);
-  const height = clampSize(stdout?.rows, 24, 10);
+  // Ноль — реальное значение columns там, где размер терминала неизвестен
+  // (псевдотерминал без управляющего tty, запуск под supervisor). Без защиты
+  // интерфейс схлопывался в колонку шириной в один символ.
+  const width = clampSize(stdout?.columns, 100, 40);
+  const height = clampSize(stdout?.rows, 30, 12);
 
-  const [tab, setTab] = useState<Tab>("radio");
+  const [focus, setFocus] = useState<Focus>("list");
+  const [sectionIndex, setSectionIndex] = useState(0);
+  const [activeSection, setActiveSection] = useState<SectionId>("radio");
+
+  const [rowsBySection, setRows] = useState<Partial<Record<SectionId, unknown[]>>>({});
+  const [selectedBySection, setSelected] = useState<Partial<Record<SectionId, number>>>({});
+  const [loading, setLoading] = useState<SectionId | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [volume, setVolume] = useState(100);
+
   const [now, setNow] = useState<NowPlaying | null>(null);
+  const [volume, setVolume] = useState(100);
+  /** Громкость до выключения звука — чтобы вернуть ту же, а не 100. */
+  const [mutedFrom, setMutedFrom] = useState(100);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Эфир
   const [radioNow, setRadioNow] = useState<RadioItem | null>(null);
-  const [radioList, setRadioList] = useState<RadioItem[]>([]);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
-  // Выпуски + треклист играющего
-  const [shows, setShows] = useState<Show[]>([]);
   const [tracklist, setTracklist] = useState<TracklistItem[]>([]);
-  const [showTracklist, setShowTracklist] = useState(false);
+  const [detailShow, setDetailShow] = useState<Show | null>(null);
 
-  // Библиотека и поиск
-  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
-  const [likes, setLikes] = useState<LikedShow[]>([]);
   const [query, setQuery] = useState("");
   const [typing, setTyping] = useState(false);
-  const [results, setResults] = useState<Show[]>([]);
 
-  const [selected, setSelected] = useState<Record<Tab, number>>({
-    radio: 0,
-    shows: 0,
-    library: 0,
-    search: 0,
-  });
+  const section = sectionById(activeSection);
+  const rows = rowsBySection[activeSection] ?? [];
+  const selected = Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, rows.length - 1));
 
   const say = useCallback((text: string | null) => setMessage(text), []);
+  const setSelectedFor = useCallback(
+    (id: SectionId, value: number) => setSelected((previous) => ({ ...previous, [id]: value })),
+    [],
+  );
 
-  // ── Загрузка данных ──
+  // ── Загрузка раздела при первом открытии ──
+
+  useEffect(() => {
+    if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
+    const spec = sectionById(activeSection);
+    if (spec.needsAuth && !accessToken) return;
+
+    let cancelled = false;
+    setLoading(activeSection);
+    void spec
+      .load({ accessToken, userId })
+      .then((loaded) => {
+        if (!cancelled) setRows((previous) => ({ ...previous, [activeSection]: loaded }));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) say(`Раздел не загрузился: ${(error as Error).message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, accessToken, userId, rowsBySection, say]);
+
+  // ── Эфир ──
 
   useEffect(() => {
     void (async () => {
@@ -123,11 +154,11 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
         await backend.load(url);
         setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
       } catch (error) {
-        setMessage(`Эфир не запустился: ${(error as Error).message}`);
+        say(`Эфир не запустился: ${(error as Error).message}`);
       }
     })();
-    // Один раз при запуске: backend за время жизни интерфейса не меняется, а
-    // добавление его в зависимости перезапускало бы эфир на каждой перерисовке.
+    // Один раз при запуске: backend за жизнь интерфейса не меняется, а его
+    // добавление в зависимости перезапускало бы эфир на каждой перерисовке.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -136,35 +167,20 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
       setRadioNow(schedule.now);
-      // Порядок как в эфире: сначала что дальше, потом что играло.
-      setRadioList([
-        ...(schedule.next ? [schedule.next] : []),
-        ...(schedule.now ? [schedule.now] : []),
-        ...schedule.history,
-      ]);
+      setRows((previous) => ({
+        ...previous,
+        radio: [
+          ...(schedule.next ? [{ ...schedule.next, title: `дальше · ${formatRadioItem(schedule.next)}` }] : []),
+          ...(schedule.now ? [{ ...schedule.now, title: formatRadioItem(schedule.now) }] : []),
+          ...schedule.history.map((item) => ({ ...item, title: formatRadioItem(item) })),
+        ],
+      }));
     };
     void refresh();
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    void listShows({ limit: 60, accessToken }).then(setShows).catch(() => setShows([]));
-  }, [accessToken]);
-
-  useEffect(() => {
-    if (!accessToken) return;
-    void (async () => {
-      const [ownPlaylists, likedShows] = await Promise.all([
-        listPlaylists(accessToken, tokenUserId(accessToken)).catch(() => []),
-        listLikedShows(accessToken, tokenUserId(accessToken)).catch(() => []),
-      ]);
-      setPlaylists(ownPlaylists);
-      setLikes(likedShows);
-    })();
-  }, [accessToken]);
-
-  // Присутствие в эфире — только пока играет именно эфир.
   useEffect(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
@@ -182,28 +198,61 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
 
     return () => {
       if (timer) clearInterval(timer);
+      // Уходим из эфира явно: иначе слушатель висит в счётчике до TTL.
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
 
-  // Поиск с задержкой: запрос на каждую букву — это шесть запросов на слово.
+  // ── Поиск ──
+
   useEffect(() => {
-    if (tab !== "search" || query.trim().length < 2) return;
+    if (activeSection !== "search") return;
+    if (query.trim().length < 2) {
+      setRows((previous) => ({ ...previous, search: [] }));
+      return;
+    }
+    // Задержка: запрос на каждую букву — это несколько обращений на слово.
     const timer = setTimeout(() => {
-      void searchShows(query.trim(), 40, accessToken).then(setResults).catch(() => setResults([]));
+      void searchShows(query.trim(), 50, accessToken)
+        .then((found) => setRows((previous) => ({ ...previous, search: found })))
+        .catch(() => setRows((previous) => ({ ...previous, search: [] })));
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, tab, accessToken]);
+  }, [query, activeSection, accessToken]);
+
+  // ── Подробности выбранного ──
+
+  const selectedRow = rows[selected];
+
+  useEffect(() => {
+    // Треклист и описание есть только у выпуска; остальные сущности описываются
+    // тем, что уже пришло вместе со списком.
+    const show = asShow(activeSection, selectedRow);
+    if (!show) {
+      setDetailShow(null);
+      setTracklist([]);
+      return;
+    }
+    setDetailShow(show);
+
+    let cancelled = false;
+    void fetchTracklist(show, accessToken)
+      .then((items) => {
+        if (!cancelled) setTracklist(items);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, selectedRow, accessToken]);
 
   // ── Воспроизведение ──
 
   const playRadio = useCallback(async () => {
     if (!streamUrl) return;
-    say("Подключаемся к эфиру…");
     try {
       await backend.load(streamUrl);
       setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
-      setShowTracklist(false);
       say(null);
     } catch (error) {
       say(`Не вышло: ${(error as Error).message}`);
@@ -232,177 +281,178 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
         totalSec: show.duration,
       });
       say(null);
-      const items = await fetchTracklist(show, accessToken).catch(() => []);
-      setTracklist(items);
-      // Треклист показываем сразу: ради него сюда и приходят.
-      setShowTracklist(items.length > 0);
     },
     [backend, accessToken, say],
   );
 
-  // ── Списки по вкладкам ──
-
-  const currentRows = useMemo(() => {
-    switch (tab) {
-      case "radio":
-        return radioList;
-      case "shows":
-        return showTracklist && tracklist.length > 0 ? tracklist : shows;
-      case "library":
-        return likes.length > 0 ? likes : playlists;
-      case "search":
-        return results;
-    }
-  }, [tab, radioList, shows, tracklist, showTracklist, likes, playlists, results]);
-
-  const selectedIndex = Math.min(selected[tab], Math.max(0, currentRows.length - 1));
-
-  const playingIndex = useMemo(() => {
-    if (tab === "shows" && showTracklist) {
-      return currentTrackIndex(tracklist, status.positionSec);
-    }
-    if (tab === "shows" && now?.showId) {
-      return shows.findIndex((show) => show.id === now.showId);
-    }
-    if (tab === "radio" && radioNow) {
-      return radioList.findIndex((item) => item === radioNow);
-    }
-    return -1;
-  }, [tab, showTracklist, tracklist, status.positionSec, now?.showId, shows, radioNow, radioList]);
-
-  const move = useCallback(
-    (delta: number) => {
-      setSelected((previous) => {
-        const count = currentRows.length;
-        if (count === 0) return previous;
-        const next = Math.min(count - 1, Math.max(0, (previous[tab] ?? 0) + delta));
-        return { ...previous, [tab]: next };
-      });
+  const playById = useCallback(
+    async (showId: string) => {
+      const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
+      if (show) await playShow(show);
+      else say("Выпуск не открылся");
     },
-    [currentRows.length, tab],
+    [accessToken, playShow, say],
   );
 
+  /** Enter: у каждого раздела своё осмысленное действие. */
   const activate = useCallback(async () => {
-    const row = currentRows[selectedIndex];
+    const row = rows[selected];
     if (!row) return;
 
-    if (tab === "radio") {
-      const item = row as RadioItem;
-      // У элемента эфира есть привязка к выпуску — открываем архивную запись,
-      // а не пытаемся «перемотать» живой поток, чего он не умеет.
-      const slug = item.show?.slug;
-      if (!slug) {
-        await playRadio();
-        return;
+    switch (activeSection) {
+      case "radio": {
+        const item = row as RadioItem;
+        const slug = item.show?.slug;
+        // У элемента эфира есть привязка к архивной записи — открываем её.
+        // «Перемотать» живой поток нельзя, он этого не умеет.
+        if (!slug) return playRadio();
+        const show = await findShow(parseEntityParam(slug), accessToken).catch(() => null);
+        return show ? playShow(show) : playRadio();
       }
-      const found = await searchShows(item.show?.title ?? "", 5, accessToken).catch(() => []);
-      const match = found.find((candidate) => candidate.slug === slug) ?? found[0];
-      if (match) await playShow(match);
-      else await playRadio();
-      return;
-    }
-
-    if (tab === "shows") {
-      if (showTracklist) {
-        const item = row as TracklistItem;
-        if (item.timestamp_sec !== null && backend.canSeek) {
-          await backend.seek(item.timestamp_sec, "absolute");
+      case "shows":
+      case "search":
+        return playShow(row as Show);
+      case "likes":
+        return playById((row as LikedShow).id);
+      case "finds": {
+        const find = row as Find;
+        if (!find.show) return;
+        await playById(find.show.id);
+        // Находка — метка внутри выпуска: без прыжка к ней смысл теряется.
+        if (find.timestampSec !== null && backend.canSeek) {
+          await backend.seek(find.timestampSec, "absolute");
         }
         return;
       }
-      await playShow(row as Show);
-      return;
+      case "saved": {
+        const saved = row as SavedRow;
+        if (saved.isShow) return playById(saved.id);
+        say(`«${saved.entityType}» из терминала пока не открыть`);
+        return;
+      }
+      case "artists": {
+        const artist = row as Artist;
+        const found = await showsByArtist(artist.id, accessToken).catch(() => []);
+        const first = found[0];
+        if (!first) return say(`У «${artist.name}» нет выпусков`);
+        return playById(first.id);
+      }
+      case "playlists": {
+        const playlist = row as PlaylistSummary;
+        if (!accessToken) return;
+        const items = await listPlaylistItems(accessToken, playlist.id).catch(() => []);
+        const firstShow = items.find((item) => item.kind === "show");
+        if (!firstShow) return say("В плейлисте нет выпусков");
+        return playById(firstShow.id);
+      }
+      default:
+        say("Здесь пока нечего играть");
     }
-
-    if (tab === "library" && likes.length > 0) {
-      const liked = row as LikedShow;
-      const match = shows.find((show) => show.id === liked.id);
-      await playShow(
-        match ?? {
-          id: liked.id,
-          public_id: liked.public_id,
-          slug: liked.slug,
-          title: liked.title,
-          description: null,
-          cover_url: null,
-          duration: liked.duration,
-          status: "published",
-          published_at: null,
-          tracklist_disabled: null,
-          artists: liked.artists.map((name) => ({ id: name, name, slug: null })),
-        },
-      );
-      return;
-    }
-
-    if (tab === "search") await playShow(row as Show);
-  }, [currentRows, selectedIndex, tab, showTracklist, backend, playRadio, playShow, accessToken, likes.length, shows]);
+  }, [rows, selected, activeSection, accessToken, backend, playRadio, playShow, playById, say]);
 
   // ── Клавиатура ──
 
+  const moveSelection = useCallback(
+    (delta: number) => {
+      if (focus === "sidebar") {
+        setSectionIndex((previous) => Math.min(SECTIONS.length - 1, Math.max(0, previous + delta)));
+        return;
+      }
+      setSelectedFor(activeSection, Math.min(rows.length - 1, Math.max(0, selected + delta)));
+    },
+    [focus, activeSection, rows.length, selected, setSelectedFor],
+  );
+
+  const openSection = useCallback((index: number) => {
+    const target = SECTIONS[index];
+    if (!target) return;
+    setSectionIndex(index);
+    setActiveSection(target.id);
+    setFocus("list");
+    setTyping(target.id === "search");
+  }, []);
+
   useInput((input, key) => {
-    // В режиме ввода поиска клавиши принадлежат строке, а не навигации —
-    // иначе набрать «q» в запросе было бы невозможно.
     if (typing) {
-      if (key.escape || key.return) {
-        setTyping(false);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setQuery((value) => value.slice(0, -1));
-        return;
-      }
+      // В режиме ввода клавиши принадлежат строке: иначе «q» в запросе набрать
+      // было бы нельзя.
+      if (key.escape || key.return) return setTyping(false);
+      if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
       if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
       return;
     }
 
-    if (showHelp) {
-      setShowHelp(false);
-      return;
-    }
+    if (showHelp) return setShowHelp(false);
 
     if (input === "q" || (key.ctrl && input === "c")) {
       void onExit().then(() => exit());
       return;
     }
-    if (input === "?") {
-      setShowHelp(true);
+    if (input === "?") return setShowHelp(true);
+
+    if (key.tab) {
+      const order: Focus[] = ["sidebar", "list", "details"];
+      const index = order.indexOf(focus);
+      setFocus(order[(index + (key.shift ? order.length - 1 : 1)) % order.length] ?? "list");
+      return;
+    }
+    if (input === "h") return setFocus("sidebar");
+    if (input === "l") return setFocus("list");
+
+    // Прямой переход цифрой — самый быстрый путь, когда знаешь, куда идёшь.
+    const digit = Number.parseInt(input, 10);
+    if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(9, SECTIONS.length)) {
+      return openSection(digit - 1);
+    }
+
+    if (input === "j" || key.downArrow) return moveSelection(1);
+    if (input === "k" || key.upArrow) return moveSelection(-1);
+    if (key.pageDown) return moveSelection(10);
+    if (key.pageUp) return moveSelection(-10);
+    if (input === "g") {
+      if (focus === "sidebar") setSectionIndex(0);
+      else setSelectedFor(activeSection, 0);
+      return;
+    }
+    if (input === "G") {
+      if (focus === "sidebar") setSectionIndex(SECTIONS.length - 1);
+      else setSelectedFor(activeSection, rows.length - 1);
       return;
     }
 
-    if (input === "1") setTab("radio");
-    if (input === "2") setTab("shows");
-    if (input === "3") setTab("library");
-    if (input === "4") {
-      setTab("search");
-      setTyping(true);
-    }
-    if (key.tab) {
-      const index = TABS.findIndex((candidate) => candidate.id === tab);
-      const next = TABS[(index + 1) % TABS.length];
-      if (next) setTab(next.id);
+    if (key.return) {
+      if (focus === "sidebar") return openSection(sectionIndex);
+      void activate();
+      return;
     }
 
-    if (input === "j" || key.downArrow) move(1);
-    if (input === "k" || key.upArrow) move(-1);
-    if (input === "g") setSelected((previous) => ({ ...previous, [tab]: 0 }));
-    if (input === "G") setSelected((previous) => ({ ...previous, [tab]: currentRows.length - 1 }));
-    if (key.pageDown) move(10);
-    if (key.pageUp) move(-10);
-
-    if (key.return) void activate();
+    // Плеер слушается из любой панели: музыка важнее навигации. Сочетания
+    // намеренно те же, что на сайте (src/hooks/usePlayerKeyboard.ts) — space,
+    // ←/→ на 30 секунд, m, n, p.
+    if (input === " ") return void backend.setPaused(!status.paused);
+    if (input === "r") return void playRadio();
+    if (input === "m" && backend.canSetVolume) {
+      // Прежнюю громкость помним, иначе включение звука ставило бы её в 100
+      // и било бы по ушам того, кто слушал тихо.
+      setVolume((value) => {
+        const next = value === 0 ? mutedFrom || 100 : 0;
+        setMutedFrom(value === 0 ? 0 : value);
+        void backend.setVolume(next);
+        return next;
+      });
+      return;
+    }
+    if (input === "n" || input === "p") {
+      // Очереди пока нет: честно говорим об этом вместо молчаливого бездействия.
+      say("Очередь появится позже — пока выбирайте в списке");
+      return;
+    }
     if (input === "/") {
-      setTab("search");
-      setTyping(true);
+      const index = SECTIONS.findIndex((candidate) => candidate.id === "search");
+      return openSection(index);
     }
-
-    if (input === " ") void backend.setPaused(!status.paused);
-    if (input === "t" && tracklist.length > 0) setShowTracklist((value) => !value);
-    if (input === "r") void playRadio();
-
     if (key.rightArrow && backend.canSeek && now?.kind === "show") void backend.seek(30, "relative");
     if (key.leftArrow && backend.canSeek && now?.kind === "show") void backend.seek(-30, "relative");
-
     if ((input === "+" || input === "=") && backend.canSetVolume) {
       setVolume((value) => {
         const next = Math.min(130, value + 5);
@@ -419,21 +469,53 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
     }
   });
 
-  // ── Отрисовка ──
+  // ── Раскладка ──
 
-  const info: PlaybackInfo = useMemo(() => {
+  const playingIndex = useMemo(() => {
+    if (activeSection === "radio" && radioNow) {
+      return (rows as RadioItem[]).findIndex((item) => item.played_at === radioNow.played_at);
+    }
+    if (!now?.showId) return -1;
+    if (activeSection === "shows" || activeSection === "search") {
+      return (rows as Show[]).findIndex((show) => show.id === now.showId);
+    }
+    if (activeSection === "likes") return (rows as LikedShow[]).findIndex((show) => show.id === now.showId);
+    return -1;
+  }, [activeSection, rows, radioNow, now?.showId]);
+
+  const details: Details | null = useMemo(() => {
+    const row = rows[selected];
+    if (!row) return null;
+
+    if (detailShow) {
+      const isPlaying = now?.showId === detailShow.id;
+      const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
+      return {
+        title: detailShow.title ?? "Без названия",
+        subtitle: sameText(artistLine, detailShow.title) ? null : artistLine || null,
+        facts: [
+          ["длительность", formatDuration(detailShow.duration)],
+          ["опубликован", detailShow.published_at?.slice(0, 10) ?? "—"],
+        ],
+        description: detailShow.description,
+        tracklist,
+        // Подсветка трека — только у ИГРАЮЩЕГО выпуска: у чужого позиция плеера
+        // к его треклисту отношения не имеет.
+        playingTrack: isPlaying ? currentTrackIndex(tracklist, status.positionSec) : -1,
+      };
+    }
+    return describeRow(activeSection, row);
+  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection]);
+
+  const info = useMemo(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
-        subtitle: radioNow?.show?.artists?.join(", ") ?? null,
-        note: radioNow?.show?.description?.replace(/\s+/g, " ").trim() ?? null,
-        // У эфира позиция — это «сколько идёт текущий выпуск», её знает
-        // расписание, а не плеер: у бесконечного потока своей позиции нет.
+        subtitle: radioNow?.show?.description?.replace(/\s+/g, " ").trim() ?? null,
+        // Позиция эфира — «сколько идёт текущий выпуск»: её знает расписание,
+        // а не плеер, у бесконечного потока своей позиции нет.
         position: elapsedSec(radioNow),
         total: radioNow?.duration ?? null,
-        backend: backendName,
-        volume,
-        badge: null,
         live: true,
       };
     }
@@ -441,276 +523,190 @@ export function App({ backend, backendName, accessToken, onExit }: AppProps): Re
       return {
         title: now.title,
         subtitle: now.subtitle,
-        note: null,
         position: status.positionSec,
         total: status.durationSec ?? now.totalSec,
-        backend: backendName,
-        volume,
-        badge: null,
         live: false,
       };
     }
-    return {
-      title: "Ничего не играет",
-      subtitle: null,
-      note: "r — эфир, Enter — выбранное в списке",
-      position: null,
-      total: null,
-      backend: backendName,
-      volume,
-      badge: null,
-      live: false,
-    };
-  }, [now, radioNow, status, backendName, volume]);
+    return { title: "Ничего не играет", subtitle: null, position: null, total: null, live: false };
+  }, [now, radioNow, status]);
 
-  const listHeight = Math.max(3, height - 14);
+  if (showHelp) return <HelpOverlay width={width} />;
 
-  if (showHelp) return <Help width={width} />;
+  const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
+  const bodyHeight = Math.max(8, height - 6);
+  const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
 
   return (
     <Box flexDirection="column" width={width}>
-      <PlaybackPanel info={info} state={status} width={width} />
+      <Box>
+        <Sidebar
+          sections={SECTIONS.map((candidate, index) => ({
+            id: candidate.id,
+            label: index < 9 ? `${index + 1} ${candidate.label}` : `  ${candidate.label}`,
+            needsAuth: candidate.needsAuth,
+            group: candidate.group,
+          }))}
+          activeId={activeSection}
+          selectedIndex={sectionIndex}
+          focused={focus === "sidebar"}
+          hasAuth={!!accessToken}
+          width={SIDEBAR_WIDTH}
+          height={bodyHeight - 2}
+        />
 
-      <Box paddingX={1}>
-        {TABS.map((candidate, index) => {
-          const active = candidate.id === tab;
-          const locked = candidate.needsAuth && !accessToken;
-          return (
-            <Text
-              key={candidate.id}
-              color={active ? theme.accent : locked ? theme.muted : undefined}
-              bold={active}
-              underline={active}
-            >
-              {index > 0 ? "   " : ""}
-              {index + 1} {candidate.label}
-              {locked ? " (вход)" : ""}
-            </Text>
-          );
-        })}
+        <Box flexDirection="column" width={contentWidth}>
+          <ListPanel<unknown>
+            title={
+              activeSection === "search"
+                ? `Поиск: ${query || "…"}${typing ? "▌" : ""}`
+                : loading === activeSection
+                  ? `${section.listTitle} — загружаем…`
+                  : section.listTitle
+            }
+            rows={rows}
+            columns={section.columns as never}
+            selected={selected}
+            playing={playingIndex}
+            height={listHeight}
+            width={contentWidth}
+            focused={focus === "list"}
+            emptyHint={section.needsAuth && !accessToken ? "Нужен вход: surprise login" : section.emptyHint}
+          />
+
+          <DetailsPanel
+            details={details}
+            focused={focus === "details"}
+            width={contentWidth}
+            height={Math.max(6, bodyHeight - listHeight - 2)}
+          />
+        </Box>
       </Box>
 
-      {renderList({
-        tab,
-        rows: currentRows,
-        selected: selectedIndex,
-        playing: playingIndex,
-        height: listHeight,
-        width,
-        showTracklist,
-        query,
-        typing,
-        hasAuth: !!accessToken,
-        likesCount: likes.length,
-      })}
+      <PlayerBar
+        title={info.title}
+        subtitle={info.subtitle}
+        position={info.position}
+        total={info.total}
+        live={info.live}
+        state={status}
+        backend={backendName}
+        volume={volume}
+        badge={null}
+        width={width}
+      />
 
       <Box paddingX={1}>
         <Text color={message ? theme.paused : theme.muted}>
-          {message ?? "j/k — список · Enter — играть · space — пауза · t — треклист · / — поиск · ? — помощь · q — выход"}
+          {message ??
+            "Tab/h/l — панели · j/k — список · Enter — играть · space — пауза · / — поиск · ? — помощь · q — выход"}
         </Text>
       </Box>
     </Box>
   );
 }
 
-/** Размер терминала с защитой от нуля и мусора. */
+/** Подзаголовок, повторяющий заголовок, — шум: в этом случае его нет. */
+function dropIfSame(value: string | null | undefined, title: string | null | undefined): string | null {
+  const text = (value ?? "").trim();
+  return !text || sameText(text, title) ? null : text;
+}
+
+/** Одинаковы ли строки с точностью до регистра и пробелов. */
+function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+}
+
 function clampSize(value: number | undefined, fallback: number, minimum: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 
-/** user_id из токена: он лежит в claim sub, отдельный запрос не нужен. */
-function tokenUserId(accessToken: string): string {
-  const segment = accessToken.split(".")[1];
-  if (!segment) return "";
-  try {
-    const json = JSON.parse(Buffer.from(segment.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
-    return String(json.sub ?? "");
-  } catch {
-    return "";
-  }
+/** Строки, которые сами по себе являются выпуском. */
+function asShow(sectionId: SectionId, row: unknown): Show | null {
+  if (!row) return null;
+  if (sectionId === "shows" || sectionId === "search") return row as Show;
+  return null;
 }
 
-function renderList(params: {
-  tab: Tab;
-  rows: readonly unknown[];
-  selected: number;
-  playing: number;
-  height: number;
-  width: number;
-  showTracklist: boolean;
-  query: string;
-  typing: boolean;
-  hasAuth: boolean;
-  likesCount: number;
-}): React.ReactElement {
-  const { tab, rows, selected, playing, height, width, showTracklist, query, typing, hasAuth } = params;
+/** Подробности для сущностей без треклиста — из того, что уже есть в списке. */
+function describeRow(sectionId: SectionId, row: unknown): Details | null {
+  const empty = { tracklist: [] as TracklistItem[], playingTrack: -1 };
 
-  if (tab === "radio") {
-    return (
-      <ListPanel<RadioItem>
-        title="Эфир — что играло и что дальше"
-        rows={rows as RadioItem[]}
-        selected={selected}
-        playing={playing}
-        height={height}
-        width={width}
-        focused
-        emptyHint="Расписание пока недоступно"
-        columns={[
-          { header: "", width: 6, value: (item) => (item === (rows as RadioItem[])[playing] ? "сейчас" : "") },
-          { header: "Выпуск", width: 0, flex: true, value: (item) => formatRadioItem(item) },
-          { header: "Длит.", width: 7, value: (item) => formatDuration(item.duration) },
-        ]}
-      />
-    );
-  }
-
-  if (tab === "shows" && showTracklist) {
-    return (
-      <ListPanel<TracklistItem>
-        title="Треклист — Enter прыгает на таймкод"
-        rows={rows as TracklistItem[]}
-        selected={selected}
-        playing={playing}
-        height={height}
-        width={width}
-        focused
-        emptyHint="У выпуска нет треклиста"
-        columns={[
-          { header: "#", width: 3, value: (_item, index) => String(index + 1) },
-          { header: "Время", width: 7, value: (item) => formatDuration(item.timestamp_sec) },
-          { header: "Артист", width: 24, value: (item) => item.artist ?? "—" },
-          { header: "Трек", width: 0, flex: true, value: (item) => item.title ?? "—" },
-        ]}
-      />
-    );
-  }
-
-  if (tab === "shows") {
-    return (
-      <ListPanel<Show>
-        title="Выпуски — t показывает треклист играющего"
-        rows={rows as Show[]}
-        selected={selected}
-        playing={playing}
-        height={height}
-        width={width}
-        focused
-        emptyHint="Список пуст"
-        columns={[
-          { header: "Выпуск", width: 0, flex: true, value: (show) => show.title ?? "Без названия" },
-          { header: "Артисты", width: 26, value: (show) => show.artists.map((a) => a.name).join(", ") },
-          { header: "Длит.", width: 7, value: (show) => formatDuration(show.duration) },
-        ]}
-      />
-    );
-  }
-
-  if (tab === "library") {
-    if (!hasAuth) {
-      return (
-        <ListPanel<never>
-          title="Библиотека"
-          rows={[]}
-          selected={0}
-          playing={-1}
-          height={height}
-          width={width}
-          focused
-          emptyHint="Нужен вход: surprise login"
-          columns={[]}
-        />
-      );
+  switch (sectionId) {
+    case "artists": {
+      const artist = row as Artist;
+      return {
+        title: artist.name,
+        subtitle: artist.is_resident ? "резидент" : null,
+        facts: [],
+        description: artist.bio,
+        ...empty,
+      };
     }
-    if (params.likesCount > 0) {
-      return (
-        <ListPanel<LikedShow>
-          title="Лайки"
-          rows={rows as LikedShow[]}
-          selected={selected}
-          playing={playing}
-          height={height}
-          width={width}
-          focused
-          emptyHint="Лайков пока нет"
-          columns={[
-            { header: "Выпуск", width: 0, flex: true, value: (show) => show.title ?? "Без названия" },
-            { header: "Артисты", width: 26, value: (show) => show.artists.join(", ") },
-            { header: "Длит.", width: 7, value: (show) => formatDuration(show.duration) },
-          ]}
-        />
-      );
+    case "hosts": {
+      const host = row as Host;
+      return {
+        title: host.name,
+        subtitle: host.is_verified ? "подтверждённый автор" : null,
+        facts: [["слаг", host.slug]],
+        description: host.bio,
+        ...empty,
+      };
     }
-    return (
-      <ListPanel<PlaylistSummary>
-        title="Плейлисты"
-        rows={rows as PlaylistSummary[]}
-        selected={selected}
-        playing={-1}
-        height={height}
-        width={width}
-        focused
-        emptyHint="Плейлистов пока нет"
-        columns={[
-          { header: "Плейлист", width: 0, flex: true, value: (playlist) => playlist.title },
-          { header: "Треков", width: 7, value: (playlist) => String(playlist.itemCount) },
-        ]}
-      />
-    );
+    case "releases": {
+      const release = row as Release;
+      return {
+        title: release.title,
+        subtitle: dropIfSame(release.artists.join(", "), release.title),
+        facts: [
+          ["дата", release.release_date ?? "—"],
+          ["тип", release.type ?? "—"],
+        ],
+        description: null,
+        ...empty,
+      };
+    }
+    case "likes": {
+      const show = row as LikedShow;
+      return {
+        title: show.title ?? "Без названия",
+        subtitle: dropIfSame(show.artists.join(", "), show.title),
+        facts: [["длительность", formatDuration(show.duration)]],
+        description: null,
+        ...empty,
+      };
+    }
+    case "finds": {
+      const find = row as Find;
+      return {
+        title: [find.artist, find.title].filter(Boolean).join(" — ") || "Находка",
+        subtitle: find.show?.title ?? null,
+        facts: [["метка", formatDuration(find.timestampSec)]],
+        description: null,
+        ...empty,
+      };
+    }
+    case "playlists": {
+      const playlist = row as PlaylistSummary;
+      return {
+        title: playlist.title,
+        subtitle: playlist.is_public === false ? "приватный" : null,
+        facts: [["треков", String(playlist.itemCount)]],
+        description: playlist.description,
+        ...empty,
+      };
+    }
+    case "radio": {
+      const item = row as RadioItem;
+      return {
+        title: formatRadioItem(item),
+        subtitle: dropIfSame(item.show?.artists?.join(", "), formatRadioItem(item)),
+        facts: [["длительность", formatDuration(item.duration)]],
+        description: item.show?.description ?? null,
+        ...empty,
+      };
+    }
+    default:
+      return null;
   }
-
-  return (
-    <ListPanel<Show>
-      title={`Поиск: ${query || "…"}${typing ? " ▌" : ""}`}
-      rows={rows as Show[]}
-      selected={selected}
-      playing={playing}
-      height={height}
-      width={width}
-      focused
-      emptyHint={query.length < 2 ? "Введите минимум две буквы" : "Ничего не нашли"}
-      columns={[
-        { header: "Выпуск", width: 0, flex: true, value: (show) => show.title ?? "Без названия" },
-        { header: "Артисты", width: 26, value: (show) => show.artists.map((a) => a.name).join(", ") },
-        { header: "Длит.", width: 7, value: (show) => formatDuration(show.duration) },
-      ]}
-    />
-  );
-}
-
-function Help({ width }: { width: number }): React.ReactElement {
-  const rows: Array<[string, string]> = [
-    ["j / k, ↑ / ↓", "по списку"],
-    ["g / G", "в начало / в конец"],
-    ["PgUp / PgDn", "на десять строк"],
-    ["Enter", "играть выбранное (в треклисте — прыгнуть на таймкод)"],
-    ["space", "пауза"],
-    ["← / →", "перемотка на 30 секунд (только у выпусков)"],
-    ["+ / -", "громкость"],
-    ["r", "вернуться в эфир"],
-    ["t", "показать/скрыть треклист играющего выпуска"],
-    ["1…4, Tab", "разделы"],
-    ["/", "поиск"],
-    ["?", "эта справка"],
-    ["q", "выход"],
-  ];
-
-  return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={2} paddingY={1} width={width}>
-      <Text bold color={theme.accent}>
-        Управление
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        {rows.map(([keys, what]) => (
-          <Box key={keys}>
-            <Text color={theme.accent}>{keys.padEnd(16)}</Text>
-            <Text>{what}</Text>
-          </Box>
-        ))}
-      </Box>
-      <Box marginTop={1}>
-        <Text color={theme.muted}>Любая клавиша — закрыть</Text>
-      </Box>
-    </Box>
-  );
 }

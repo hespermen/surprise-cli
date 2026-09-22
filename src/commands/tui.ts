@@ -52,6 +52,7 @@ export async function tuiCommand(): Promise<number> {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,
+      userId: session?.user_id ?? "",
       onExit: async () => {
         await backend.stop().catch(() => {});
       },
