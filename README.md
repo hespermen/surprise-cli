@@ -3,22 +3,17 @@
 Эфир, архив выпусков и своя библиотека — без браузера.
 
 ```bash
-npm i -g github:hespermen/surprise-cli && surprise radio
-```
-
-Если npm ответил «added 1 package», а команда `surprise` не нашлась — у вас npm
-10.x, где глобальная установка из git оставляет пустой каталог пакета (`npm pack`
-на том же адресе при этом работает). Обходной путь той же одной строкой:
-
-```bash
 npm i -g "$(npm pack -s github:hespermen/surprise-cli)" && surprise radio
 ```
 
-После публикации в npm будет короче всего:
+Выглядит длиннее обычного `npm i -g github:…` — и это не прихоть. На npm 10.x
+короткая форма отвечает «added 1 package» и оставляет **пустой** каталог пакета:
+команда появляется, но не запускается. Сбой при этом выглядит как успех, поэтому
+здесь сразу тот путь, который работает везде. На npm 11 и новее короткая форма
+тоже годится:
 
 ```bash
-npm i -g surprise-fm && surprise radio
-npx surprise-fm radio          # вообще без установки
+npm i -g github:hespermen/surprise-cli && surprise radio
 ```
 
 ## Установка
