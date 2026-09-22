@@ -10199,7 +10199,7 @@ var require_react_reconciler_production_min = __commonJS({
         return Oe().memoizedState;
       }
       function sf(a, b, c) {
-        var d = tf(a);
+        var d = tf2(a);
         c = { lane: d, action: c, hasEagerState: false, eagerState: null, next: null };
         if (uf(a)) vf(b, c);
         else if (c = be(a, b, c, d), null !== c) {
@@ -10209,7 +10209,7 @@ var require_react_reconciler_production_min = __commonJS({
         }
       }
       function cf(a, b, c) {
-        var d = tf(a), e = { lane: d, action: c, hasEagerState: false, eagerState: null, next: null };
+        var d = tf2(a), e = { lane: d, action: c, hasEagerState: false, eagerState: null, next: null };
         if (uf(a)) vf(b, e);
         else {
           var f = a.alternate;
@@ -10380,14 +10380,14 @@ var require_react_reconciler_production_min = __commonJS({
         return (a = a._reactInternals) ? wa(a) === a : false;
       }, enqueueSetState: function(a, b, c) {
         a = a._reactInternals;
-        var d = O(), e = tf(a), f = ge(d, e);
+        var d = O(), e = tf2(a), f = ge(d, e);
         f.payload = b;
         void 0 !== c && null !== c && (f.callback = c);
         b = he(a, f, e);
         null !== b && (af(b, a, e, d), ie(b, a, e));
       }, enqueueReplaceState: function(a, b, c) {
         a = a._reactInternals;
-        var d = O(), e = tf(a), f = ge(d, e);
+        var d = O(), e = tf2(a), f = ge(d, e);
         f.tag = 1;
         f.payload = b;
         void 0 !== c && null !== c && (f.callback = c);
@@ -10395,7 +10395,7 @@ var require_react_reconciler_production_min = __commonJS({
         null !== b && (af(b, a, e, d), ie(b, a, e));
       }, enqueueForceUpdate: function(a, b) {
         a = a._reactInternals;
-        var c = O(), d = tf(a), e = ge(c, d);
+        var c = O(), d = tf2(a), e = ge(c, d);
         e.tag = 2;
         void 0 !== b && null !== b && (e.callback = b);
         b = he(a, e, d);
@@ -12067,7 +12067,7 @@ var require_react_reconciler_production_min = __commonJS({
       function O() {
         return 0 !== (H & 6) ? D() : -1 !== Hh ? Hh : Hh = D();
       }
-      function tf(a) {
+      function tf2(a) {
         if (0 === (a.mode & 1)) return 1;
         if (0 !== (H & 2) && 0 !== Z) return Z & -Z;
         if (null !== Cd.transition) return 0 === Ih && (Ih = Dc()), Ih;
@@ -13182,7 +13182,7 @@ var require_react_reconciler_production_min = __commonJS({
       };
       exports2.attemptHydrationAtCurrentPriority = function(a) {
         if (13 === a.tag) {
-          var b = tf(a), c = ce(a, b);
+          var b = tf2(a), c = ce(a, b);
           if (null !== c) {
             var d = O();
             af(c, a, b, d);
@@ -13232,7 +13232,7 @@ var require_react_reconciler_production_min = __commonJS({
         a.context = ii(null);
         c = a.current;
         d = O();
-        e = tf(c);
+        e = tf2(c);
         f = ge(d, e);
         f.callback = void 0 !== b && null !== b ? b : null;
         he(c, f, e);
@@ -13409,7 +13409,7 @@ var require_react_reconciler_production_min = __commonJS({
         return false;
       };
       exports2.updateContainer = function(a, b, c, d) {
-        var e = b.current, f = O(), g = tf(e);
+        var e = b.current, f = O(), g = tf2(e);
         c = ii(c);
         null === b.context ? b.context = c : b.pendingContext = c;
         b = ge(f, g);
@@ -22111,10 +22111,11 @@ function CommandLine({
   suggestions,
   highlighted,
   width: width2,
-  error
+  error,
+  maxSuggestions
 }) {
   const inner = Math.max(24, width2 - 4);
-  const visible = suggestions.slice(0, 8);
+  const visible = suggestions.slice(0, Math.max(1, maxSuggestions));
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.accent, paddingX: 1, width: width2, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.accent, bold: true, children: "/" }),
@@ -22852,6 +22853,12 @@ function getLang() {
 function t(key) {
   return DICTIONARIES[current][key];
 }
+function tf(key, values) {
+  return t(key).replace(
+    /\{(\w+)\}/g,
+    (whole, name) => name in values ? String(values[name]) : whole
+  );
+}
 function sectionLabel(id) {
   return t(`section.${id}`);
 }
@@ -22928,6 +22935,9 @@ var init_i18n = __esm({
       "hint.radioInfo": "\u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438",
       "hint.loading": "\u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026",
       "hint.back": "Esc \u043D\u0430\u0437\u0430\u0434",
+      "tooSmall.title": "\u041E\u043A\u043D\u043E \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u0430\u043B\u0435\u043D\u044C\u043A\u043E\u0435",
+      "tooSmall.need": "\u041D\u0443\u0436\u043D\u043E \u0445\u043E\u0442\u044F \u0431\u044B {cols}\xD7{rows}, \u0441\u0435\u0439\u0447\u0430\u0441 {haveCols}\xD7{haveRows}.",
+      "tooSmall.how": "\u0420\u0430\u0441\u0442\u044F\u043D\u0438\u0442\u0435 \u043E\u043A\u043D\u043E \u0438\u043B\u0438 \u0443\u043C\u0435\u043D\u044C\u0448\u0438\u0442\u0435 \u0448\u0440\u0438\u0444\u0442 \u2014 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u0441\u0430\u043C.",
       "settings.theme": "\u0422\u0435\u043C\u0430",
       "settings.language": "\u042F\u0437\u044B\u043A",
       "settings.hint": "Enter \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442",
@@ -22998,6 +23008,9 @@ var init_i18n = __esm({
       "hint.radioInfo": "for reference only",
       "hint.loading": "loading\u2026",
       "hint.back": "Esc to go back",
+      "tooSmall.title": "Window too small",
+      "tooSmall.need": "Needs at least {cols}\xD7{rows}, currently {haveCols}\xD7{haveRows}.",
+      "tooSmall.how": "Resize the window or lower the font size \u2014 the interface will appear.",
       "settings.theme": "Theme",
       "settings.language": "Language",
       "settings.hint": "Enter to switch",
@@ -23153,6 +23166,61 @@ var init_Setup = __esm({
   }
 });
 
+// src/tui/layout.ts
+function computeLayout({
+  height,
+  hasLevels,
+  commandOpen,
+  logoHeight,
+  meterHeight
+}) {
+  const budget = height - SPARE_ROW;
+  const base = PLAYER_ROWS + HINT_ROWS;
+  const room = budget - base - MIN_BODY - COMMAND_CHROME;
+  const commandSuggestions = commandOpen ? Math.max(0, Math.min(COMMAND_MAX_SUGGESTIONS, room)) : 0;
+  const commandRows = commandOpen ? COMMAND_CHROME + commandSuggestions : 0;
+  const fixedRows = base + commandRows;
+  const showMeter = hasLevels && budget - fixedRows - meterHeight >= MIN_BODY + 2;
+  const meterRows = showMeter ? meterHeight : 0;
+  const showLogo = !commandOpen && budget - fixedRows - meterRows - logoHeight >= MIN_BODY + 4;
+  const logoRows = showLogo ? logoHeight : 0;
+  const bodyHeight = Math.max(MIN_BODY, budget - fixedRows - meterRows - logoRows);
+  const listBox = Math.max(MIN_LIST_BOX, Math.round(bodyHeight * 0.55));
+  const detailsBox = Math.max(MIN_DETAILS_BOX, bodyHeight - listBox);
+  return {
+    showLogo,
+    showMeter,
+    commandRows,
+    commandSuggestions,
+    fits: budget - fixedRows >= MIN_BODY && (!commandOpen || commandSuggestions >= COMMAND_MIN_SUGGESTIONS),
+    bodyHeight,
+    listBox,
+    listHeight: Math.max(3, listBox - 4),
+    detailsBox,
+    // Считаем по тому, что РЕАЛЬНО рисуется: по listBox и detailsBox, а не по
+    // bodyHeight. Разойдись они из-за нижних ограничений — и итог получился бы
+    // меньше настоящего кадра, то есть проверка на вместимость прошла бы там,
+    // где интерфейс уже не помещается.
+    totalRows: logoRows + listBox + detailsBox + meterRows + fixedRows
+  };
+}
+var PLAYER_ROWS, HINT_ROWS, COMMAND_CHROME, COMMAND_MAX_SUGGESTIONS, COMMAND_MIN_SUGGESTIONS, MIN_LIST_BOX, MIN_DETAILS_BOX, MIN_BODY, SPARE_ROW, MIN_USABLE_ROWS;
+var init_layout = __esm({
+  "src/tui/layout.ts"() {
+    "use strict";
+    PLAYER_ROWS = 5;
+    HINT_ROWS = 1;
+    COMMAND_CHROME = 4;
+    COMMAND_MAX_SUGGESTIONS = 8;
+    COMMAND_MIN_SUGGESTIONS = 1;
+    MIN_LIST_BOX = 7;
+    MIN_DETAILS_BOX = 5;
+    MIN_BODY = MIN_LIST_BOX + MIN_DETAILS_BOX;
+    SPARE_ROW = 1;
+    MIN_USABLE_ROWS = PLAYER_ROWS + HINT_ROWS + MIN_BODY + SPARE_ROW;
+  }
+});
+
 // src/tui/Logo.tsx
 function packRows(top, bottom) {
   let out = "";
@@ -23256,7 +23324,7 @@ function scaleRow(segments, marks = [-30, -20, -10, -5, 0]) {
   }
   return row.join("");
 }
-var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_FLOOR_DB;
+var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_FLOOR_DB, METER_GLYPHS;
 var init_meter = __esm({
   "src/player/meter.ts"() {
     "use strict";
@@ -23265,6 +23333,14 @@ var init_meter = __esm({
     METER_CHANNEL_ROWS = 2;
     METER_ROWS = METER_CHANNEL_ROWS + 1;
     METER_FLOOR_DB = -120;
+    METER_GLYPHS = {
+      /** Горящее деление. */
+      lit: "\u2588",
+      /** Погашенное: видно, сколько осталось запаса. */
+      dim: "\xB7",
+      /** Метка удержания пика. */
+      peak: "\u2503"
+    };
   }
 });
 
@@ -23293,9 +23369,9 @@ function MeterRow({
   const peakAt = Math.max(0, litSegments(peakDb, segments) - 1);
   const cells = Array.from({ length: segments }, (_, index) => {
     const cellDb = segmentDb(index, segments);
-    if (index === peakAt && peakAt >= lit) return { glyph: "\u2503", color: zoneColor(cellDb), dim: false };
-    if (index < lit) return { glyph: "\u2588", color: zoneColor(cellDb), dim: false };
-    return { glyph: "\u25AA", color: theme.muted, dim: true };
+    if (index === peakAt && peakAt >= lit) return { glyph: METER_GLYPHS.peak, color: zoneColor(cellDb), dim: false };
+    if (index < lit) return { glyph: METER_GLYPHS.lit, color: zoneColor(cellDb), dim: false };
+    return { glyph: METER_GLYPHS.dim, color: theme.muted, dim: true };
   });
   return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
     /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: theme.muted, children: [
@@ -23525,6 +23601,7 @@ function App2({
   const [typing, setTyping] = (0, import_react33.useState)(false);
   const [prefs, setPrefs] = (0, import_react33.useState)({ theme: THEMES[0].id, lang: getLang(), setupDone: true });
   const [setupStep, setSetupStep] = (0, import_react33.useState)(null);
+  const [prefsReady, setPrefsReady] = (0, import_react33.useState)(false);
   const [setupChoice, setSetupChoice] = (0, import_react33.useState)(0);
   const [channels, setChannels] = (0, import_react33.useState)([]);
   const [peaks, setPeaks] = (0, import_react33.useState)([]);
@@ -23579,6 +23656,7 @@ function App2({
       setLang(loaded.lang);
       setPrefs(loaded);
       if (!loaded.setupDone) setSetupStep("lang");
+      setPrefsReady(true);
     });
   }, []);
   const playRadio = (0, import_react33.useCallback)(async () => {
@@ -24471,6 +24549,7 @@ function App2({
     }
     return { title: t("player.nothing"), subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
+  if (!prefsReady) return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, {});
   if (login) return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(LoginOverlay, { phase: login, width: width2 });
   if (setupStep) {
     return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
@@ -24485,23 +24564,24 @@ function App2({
       }
     );
   }
+  const layout = computeLayout({
+    height,
+    hasLevels: !!backend.levels && width2 >= 20,
+    commandOpen,
+    logoHeight: LOGO_HEIGHT,
+    meterHeight: METER_ROWS
+  });
+  const { fits } = layout;
   if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(HelpOverlay, { width: width2 });
+  if (!fits) {
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.accent, paddingX: 2, paddingY: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { bold: true, color: theme.accent, children: t("tooSmall.title") }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { children: tf("tooSmall.need", { cols: MIN_COLS, rows: MIN_ROWS, haveCols: width2, haveRows: height }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: theme.muted, children: t("tooSmall.how") })
+    ] });
+  }
   const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
-  const PLAYER_ROWS = 5;
-  const HINT_ROWS = 1;
-  const commandRows = commandOpen ? 13 : 0;
-  const meterFits = !!backend.levels && width2 >= 20;
-  const meterRows = meterFits ? METER_ROWS : 0;
-  const fixedRows = PLAYER_ROWS + HINT_ROWS + commandRows;
-  const showMeter = meterFits && height - fixedRows - meterRows >= 14;
-  const showLogo = !commandOpen && height - fixedRows - (showMeter ? meterRows : 0) - LOGO_HEIGHT >= 16;
-  const bodyHeight = Math.max(
-    8,
-    height - fixedRows - (showMeter ? meterRows : 0) - (showLogo ? LOGO_HEIGHT : 0)
-  );
-  const listBox = Math.max(7, Math.round(bodyHeight * 0.55));
-  const listHeight = Math.max(3, listBox - 4);
-  const detailsBox = Math.max(5, bodyHeight - listBox);
+  const { showLogo, showMeter, bodyHeight, listBox, listHeight, detailsBox } = layout;
   const listTitle = drill ? `${drill.title} \u2014 ${t("hint.back")}` : activeSection === "search" ? `${sectionListTitle("search")}: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${sectionListTitle(activeSection)} \u2014 ${t("hint.loading")}` : activeSection === "radio" ? `${sectionListTitle(activeSection)} \xB7 ${t("hint.radioInfo")}` : activeSection === "settings" ? `${sectionListTitle(activeSection)} \xB7 ${t("settings.hint")}` : sectionListTitle(activeSection);
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
     showLogo ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Logo, { width: width2 }) : null,
@@ -24556,7 +24636,8 @@ function App2({
         suggestions,
         highlighted: commandHighlight,
         width: width2,
-        error: commandError
+        error: commandError,
+        maxSuggestions: layout.commandSuggestions
       }
     ) : null,
     showMeter ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(LevelMeter, { channelsDb: channels, peaksDb: peaks, width: width2 }) : null,
@@ -24750,6 +24831,7 @@ var init_App2 = __esm({
     init_theme();
     init_prefs();
     await init_Setup();
+    init_layout();
     await init_Logo();
     await init_LevelMeter();
     init_meter();

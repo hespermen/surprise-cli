@@ -17,18 +17,22 @@ export function CommandLine({
   highlighted,
   width,
   error,
+  maxSuggestions,
 }: {
   input: string;
   suggestions: readonly CommandSpec[];
   highlighted: number;
   width: number;
   error: string | null;
+  /** Сколько подсказок поместится — считает раскладка, см. computeLayout. */
+  maxSuggestions: number;
 }): React.ReactElement {
   const inner = Math.max(24, width - 4);
 
-  // Больше восьми строк подсказки съедают список под ней — а он и есть то,
-  // ради чего человек сюда пришёл.
-  const visible = suggestions.slice(0, 8);
+  // Сколько подсказок показать, решает раскладка: она одна знает, сколько
+  // строк осталось. Возьми палитра больше — она выдавила бы за край экрана
+  // список под ней, то есть ровно то, ради чего её открыли.
+  const visible = suggestions.slice(0, Math.max(1, maxSuggestions));
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} width={width}>

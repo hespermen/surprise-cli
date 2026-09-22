@@ -81,6 +81,9 @@ const RU = {
   "hint.radioInfo": "только для справки",
   "hint.loading": "загружаем…",
   "hint.back": "Esc назад",
+  "tooSmall.title": "Окно слишком маленькое",
+  "tooSmall.need": "Нужно хотя бы {cols}×{rows}, сейчас {haveCols}×{haveRows}.",
+  "tooSmall.how": "Растяните окно или уменьшите шрифт — интерфейс появится сам.",
 
   "settings.theme": "Тема",
   "settings.language": "Язык",
@@ -159,6 +162,9 @@ const EN: Record<MessageKey, string> = {
   "hint.radioInfo": "for reference only",
   "hint.loading": "loading…",
   "hint.back": "Esc to go back",
+  "tooSmall.title": "Window too small",
+  "tooSmall.need": "Needs at least {cols}×{rows}, currently {haveCols}×{haveRows}.",
+  "tooSmall.how": "Resize the window or lower the font size — the interface will appear.",
 
   "settings.theme": "Theme",
   "settings.language": "Language",
@@ -183,6 +189,19 @@ export function getLang(): Lang {
 
 export function t(key: MessageKey): string {
   return DICTIONARIES[current][key];
+}
+
+/**
+ * Перевод с подстановкой значений вида {имя}.
+ *
+ * Числа подставляются, а не склеиваются из кусков строки: порядок слов в
+ * языках разный, и «нужно 104×44» по-английски собирается иначе. Склейка
+ * работает ровно до первого языка, который так не строит фразу.
+ */
+export function tf(key: MessageKey, values: Record<string, string | number>): string {
+  return t(key).replace(/\{(\w+)\}/g, (whole, name: string) =>
+    name in values ? String(values[name]) : whole,
+  );
 }
 
 /** Подпись раздела по его идентификатору. */

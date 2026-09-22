@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   METER_CHANNEL_ROWS,
   METER_FLOOR_DB,
+  METER_GLYPHS,
   METER_MAX_DB,
   METER_MIN_DB,
   METER_ROWS,
@@ -113,4 +114,38 @@ test("пустые данные рисуются на полу шкалы, а н
   // Пустая полоса честнее исчезнувшей: видно, что прибор жив, а звука нет.
   assert.equal(litSegments(METER_FLOOR_DB, 40), 0);
   assert.ok(METER_FLOOR_DB < METER_MIN_DB, "пол ниже нижнего края шкалы");
+});
+
+test("каждый символ полосы занимает ровно одну колонку", async () => {
+  // Регрессия, из-за которой интерфейс дрожал в такт музыке.
+  //
+  // Погашенное деление было «▪» — по Unicode это символ ДВОЙНОЙ ширины. Шесть
+  // десятков делений занимали вдвое больше колонок, строка измерителя
+  // переносилась на вторую, и раскладка под ней съезжала. А поскольку горящие
+  // деления узкие, ширина строки менялась вместе с громкостью: чем громче, тем
+  // она короче. Экран дрожал в такт звуку.
+  //
+  // Считаем той же библиотекой, что и ink, — иначе проверка мерила бы не то.
+  const { default: stringWidth } = await import("string-width");
+
+  for (const [name, glyph] of Object.entries(METER_GLYPHS)) {
+    assert.equal(stringWidth(glyph), 1, `символ «${glyph}» (${name}) занимает не одну колонку`);
+    assert.equal([...glyph].length, 1, `символ «${glyph}» (${name}) должен быть одиночным`);
+  }
+});
+
+test("полоса из любых символов укладывается в отведённые колонки", async () => {
+  const { default: stringWidth } = await import("string-width");
+  const segments = 64;
+
+  // Крайние случаи: всё погашено, всё горит, и смесь с меткой пика.
+  const rows = [
+    METER_GLYPHS.dim.repeat(segments),
+    METER_GLYPHS.lit.repeat(segments),
+    METER_GLYPHS.lit.repeat(30) + METER_GLYPHS.peak + METER_GLYPHS.dim.repeat(segments - 31),
+  ];
+
+  for (const row of rows) {
+    assert.equal(stringWidth(row), segments, "ширина полосы обязана совпадать с числом делений");
+  }
 });

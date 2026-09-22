@@ -53,7 +53,7 @@ import {
   waitForTelegramLogin,
 } from "../net/auth.ts";
 import { parseJwt } from "../net/jwt.ts";
-import { openUrl, renderQr } from "../ui/term.ts";
+import { MIN_COLS, MIN_ROWS, openUrl, renderQr } from "../ui/term.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
 import { getListenerId, getSessionId } from "../lib/ids.ts";
@@ -75,10 +75,11 @@ import {
   type SectionId,
   type SettingRow,
 } from "./sections.ts";
-import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, type Lang } from "./i18n.ts";
+import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, tf, type Lang } from "./i18n.ts";
 import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
 import { SETUP_STEPS, Setup, type SetupStep } from "./Setup.tsx";
+import { computeLayout } from "./layout.ts";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { LevelMeter } from "./LevelMeter.tsx";
 import { METER_ROWS, decayPeak } from "../player/meter.ts";
@@ -186,6 +187,14 @@ export function App({
   const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang(), setupDone: true });
   /** Шаг первичной настройки; null — она пройдена. */
   const [setupStep, setSetupStep] = useState<SetupStep | null>(null);
+  /**
+   * Прочитаны ли настройки с диска.
+   *
+   * До этого момента рисовать нечего: тема и язык ещё неизвестны, а решение
+   * «показывать ли мастер» не принято. Раньше интерфейс успевал нарисоваться
+   * целиком, и мастер выскакивал ПОВЕРХ него — экран дёргался на старте.
+   */
+  const [prefsReady, setPrefsReady] = useState(false);
   const [setupChoice, setSetupChoice] = useState(0);
   /** Уровни по каналам и удерживаемые пики — для измерителя. */
   const [channels, setChannels] = useState<number[]>([]);
@@ -260,6 +269,7 @@ export function App({
       setPrefs(loaded);
       // Спрашиваем один раз, при самом первом запуске.
       if (!loaded.setupDone) setSetupStep("lang");
+      setPrefsReady(true);
     });
   }, []);
 
@@ -1383,6 +1393,8 @@ export function App({
     return { title: t("player.nothing"), subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
 
+  // Пока настройки не прочитаны — пустой экран, а не мигание чужой темой.
+  if (!prefsReady) return <Box />;
   if (login) return <LoginOverlay phase={login} width={width} />;
   if (setupStep) {
     return (
@@ -1396,41 +1408,46 @@ export function App({
       />
     );
   }
+  // Раскладка считается ДО ранних возвратов: по ней решается в том числе то,
+  // рисовать ли главный экран вообще.
+  const layout = computeLayout({
+    height,
+    hasLevels: !!backend.levels && width >= 20,
+    commandOpen,
+    logoHeight: LOGO_HEIGHT,
+    meterHeight: METER_ROWS,
+  });
+  const { fits } = layout;
+
   if (showHelp) return <HelpOverlay width={width} />;
+
+  // Окно ниже порога: сказать прямо лучше, чем показать обрезанный экран.
+  // Не помещающийся кадр заставляет терминал прокручиваться, и вместо
+  // интерфейса человек видит трясущуюся кашу — без единой подсказки, что
+  // дело всего лишь в размере окна.
+  if (!fits) {
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={2} paddingY={1}>
+        <Text bold color={theme.accent}>
+          {t("tooSmall.title")}
+        </Text>
+        <Text>{tf("tooSmall.need", { cols: MIN_COLS, rows: MIN_ROWS, haveCols: width, haveRows: height })}</Text>
+        <Text color={theme.muted}>{t("tooSmall.how")}</Text>
+      </Box>
+    );
+  }
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
 
-  // Высота считается по тому, что РЕАЛЬНО рисуется, а не прикидкой.
+  // Высота считается арифметикой в computeLayout, а не прикидкой на месте:
+  // там же она и проверяется тестами. Главное её правило — оставить в окне
+  // свободную строку; почему это важно, написано у SPARE_ROW.
   //
-  // Раньше здесь стояла константа, и когда сумма частей превышала окно,
-  // терминал начинал прокручивать: логотип обрезался сверху, а вся раскладка
-  // прыгала на строку при каждом изменении содержимого. Если места не хватает,
-  // части отключаются по очереди — сначала логотип, потом измеритель, — а не
-  // выдавливают друг друга за экран.
-  const PLAYER_ROWS = 5; // рамка, заголовок, подзаголовок, прогресс
-  const HINT_ROWS = 1;
-  const commandRows = commandOpen ? 13 : 0;
   // Высота измерителя ПОСТОЯННА, пока бэкенд умеет отдавать уровни. Считать её
   // по последнему ответу нельзя: опрос иногда возвращает пусто, блок исчезал, и
   // весь интерфейс переезжал на три строки — ровно то дрожание, которое видно
   // на глаз. Ширина сама по себе не меняется, поэтому от неё зависеть можно.
-  const meterFits = !!backend.levels && width >= 20;
-  const meterRows = meterFits ? METER_ROWS : 0;
-
-  const fixedRows = PLAYER_ROWS + HINT_ROWS + commandRows;
-  const showMeter = meterFits && height - fixedRows - meterRows >= 14;
-  const showLogo =
-    !commandOpen && height - fixedRows - (showMeter ? meterRows : 0) - LOGO_HEIGHT >= 16;
-
-  const bodyHeight = Math.max(
-    8,
-    height - fixedRows - (showMeter ? meterRows : 0) - (showLogo ? LOGO_HEIGHT : 0),
-  );
-  // Список и подробности делят тело нацело: остаток от деления ушёл бы в
-  // незанятую строку, и рамки разъехались бы на один ряд.
-  const listBox = Math.max(7, Math.round(bodyHeight * 0.55));
-  const listHeight = Math.max(3, listBox - 4);
-  const detailsBox = Math.max(5, bodyHeight - listBox);
+  const { showLogo, showMeter, bodyHeight, listBox, listHeight, detailsBox } = layout;
 
   const listTitle = drill
     ? `${drill.title} — ${t("hint.back")}`
@@ -1493,6 +1510,7 @@ export function App({
           highlighted={commandHighlight}
           width={width}
           error={commandError}
+          maxSuggestions={layout.commandSuggestions}
         />
       ) : null}
 

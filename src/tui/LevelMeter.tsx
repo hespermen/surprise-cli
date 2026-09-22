@@ -16,6 +16,7 @@ import React from "react";
 import {
   METER_CHANNEL_ROWS,
   METER_FLOOR_DB,
+  METER_GLYPHS,
   litSegments,
   scaleRow,
   segmentDb,
@@ -58,11 +59,11 @@ function MeterRow({
 
   const cells = Array.from({ length: segments }, (_, index) => {
     const cellDb = segmentDb(index, segments);
-    if (index === peakAt && peakAt >= lit) return { glyph: "┃", color: zoneColor(cellDb), dim: false };
-    if (index < lit) return { glyph: "█", color: zoneColor(cellDb), dim: false };
+    if (index === peakAt && peakAt >= lit) return { glyph: METER_GLYPHS.peak, color: zoneColor(cellDb), dim: false };
+    if (index < lit) return { glyph: METER_GLYPHS.lit, color: zoneColor(cellDb), dim: false };
     // Погашенные деления оставляем видимыми: по ним читается, сколько ещё
     // запаса, — пустое место этого не показывает.
-    return { glyph: "▪", color: theme.muted, dim: true };
+    return { glyph: METER_GLYPHS.dim, color: theme.muted, dim: true };
   });
 
   return (
