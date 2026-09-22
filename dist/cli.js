@@ -23298,20 +23298,22 @@ function scaleRow(segments, marks = [-30, -20, -10, -5, 0]) {
   }
   return row.join("");
 }
-var METER_MIN_DB, METER_MAX_DB;
+var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_FLOOR_DB;
 var init_meter = __esm({
   "src/player/meter.ts"() {
     "use strict";
     METER_MIN_DB = -40;
     METER_MAX_DB = 6;
+    METER_CHANNEL_ROWS = 2;
+    METER_ROWS = METER_CHANNEL_ROWS + 1;
+    METER_FLOOR_DB = -120;
   }
 });
 
 // src/tui/LevelMeter.tsx
 function channelLabel(index, total) {
-  if (total === 1) return "M";
-  if (total === 2) return index === 0 ? "L" : "R";
-  return String(index + 1);
+  if (total === 1) return index === 0 ? "M" : " ";
+  return index === 0 ? "L" : "R";
 }
 function zoneColor(db) {
   switch (zoneOf(db)) {
@@ -23351,14 +23353,19 @@ function LevelMeter({
   width: width2
 }) {
   const segments = Math.max(0, Math.min(64, width2 - 8));
-  if (segments < 12 || channelsDb.length === 0) return null;
+  if (segments < 12) return null;
+  const rows = Array.from({ length: METER_CHANNEL_ROWS }, (_, index) => ({
+    label: channelLabel(index, Math.max(1, channelsDb.length)),
+    db: channelsDb[index] ?? METER_FLOOR_DB,
+    peak: peaksDb[index] ?? channelsDb[index] ?? METER_FLOOR_DB
+  }));
   return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-    channelsDb.map((db, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+    rows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       MeterRow,
       {
-        label: channelLabel(index, channelsDb.length),
-        db,
-        peakDb: peaksDb[index] ?? db,
+        label: row.label,
+        db: row.db,
+        peakDb: row.peak,
         segments
       },
       index
@@ -24530,9 +24537,10 @@ function App2({
   const PLAYER_ROWS = 5;
   const HINT_ROWS = 1;
   const commandRows = commandOpen ? 13 : 0;
-  const meterRows = channels.length > 0 ? channels.length + 1 : 0;
+  const meterFits = !!backend.levels && width2 >= 20;
+  const meterRows = meterFits ? METER_ROWS : 0;
   const fixedRows = PLAYER_ROWS + HINT_ROWS + commandRows;
-  const showMeter = !!backend.levels && meterRows > 0 && height - fixedRows - meterRows >= 14;
+  const showMeter = meterFits && height - fixedRows - meterRows >= 14;
   const showLogo = !commandOpen && height - fixedRows - (showMeter ? meterRows : 0) - LOGO_HEIGHT >= 16;
   const bodyHeight = Math.max(
     8,

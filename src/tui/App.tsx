@@ -81,7 +81,7 @@ import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
 import { SETUP_STEPS, Setup, type SetupStep } from "./Setup.tsx";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { LevelMeter } from "./LevelMeter.tsx";
-import { decayPeak } from "../player/meter.ts";
+import { METER_ROWS, decayPeak } from "../player/meter.ts";
 import { parseLevels } from "../player/levels.ts";
 import { isLiked, toggleLike, type LikeTarget } from "../api/library.ts";
 import { Sidebar } from "./Sidebar.tsx";
@@ -1423,10 +1423,15 @@ export function App({
   const PLAYER_ROWS = 5; // рамка, заголовок, подзаголовок, прогресс
   const HINT_ROWS = 1;
   const commandRows = commandOpen ? 13 : 0;
-  const meterRows = channels.length > 0 ? channels.length + 1 : 0;
+  // Высота измерителя ПОСТОЯННА, пока бэкенд умеет отдавать уровни. Считать её
+  // по последнему ответу нельзя: опрос иногда возвращает пусто, блок исчезал, и
+  // весь интерфейс переезжал на три строки — ровно то дрожание, которое видно
+  // на глаз. Ширина сама по себе не меняется, поэтому от неё зависеть можно.
+  const meterFits = !!backend.levels && width >= 20;
+  const meterRows = meterFits ? METER_ROWS : 0;
 
   const fixedRows = PLAYER_ROWS + HINT_ROWS + commandRows;
-  const showMeter = !!backend.levels && meterRows > 0 && height - fixedRows - meterRows >= 14;
+  const showMeter = meterFits && height - fixedRows - meterRows >= 14;
   const showLogo =
     !commandOpen && height - fixedRows - (showMeter ? meterRows : 0) - LOGO_HEIGHT >= 16;
 

@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { METER_MAX_DB, METER_MIN_DB, decayPeak, litSegments, scaleRow, segmentDb, zoneOf } from "./meter.ts";
+import {
+  METER_CHANNEL_ROWS,
+  METER_FLOOR_DB,
+  METER_MAX_DB,
+  METER_MIN_DB,
+  METER_ROWS,
+  decayPeak,
+  litSegments,
+  scaleRow,
+  segmentDb,
+  zoneOf,
+} from "./meter.ts";
 
 test("zoneOf: предупреждение приходит ДО нуля", () => {
   // Граница жёлтой зоны не на нуле намеренно: индикатор, сообщающий о
@@ -78,4 +89,28 @@ test("scaleRow: подписи не наезжают за края", () => {
   const row = scaleRow(12, [-30, 0]);
   assert.equal([...row].length, 12);
   assert.ok(!row.startsWith(" 3"), "подпись выехала влево за границу");
+});
+
+test("высота измерителя — постоянная величина, а не «сколько пришло»", () => {
+  // Регрессия, видимая глазом. meterRows считался по последнему ответу опроса, а
+  // опрос между тактами возвращает пусто. Блок исчезал, высота панелей над ним
+  // пересчитывалась, и весь интерфейс переезжал на три строки — раскладка
+  // дрожала сама по себе, без единого нажатия.
+  assert.equal(METER_CHANNEL_ROWS, 2);
+  assert.equal(METER_ROWS, METER_CHANNEL_ROWS + 1, "строки каналов плюс шкала");
+
+  // Формула высоты из раскладки: зависит только от того, УМЕЕТ ли бэкенд отдавать
+  // уровни, и от ширины окна. Ни то, ни другое само по себе не меняется.
+  const meterRows = (levelsSupported: boolean, width: number) =>
+    levelsSupported && width >= 20 ? METER_ROWS : 0;
+
+  assert.equal(meterRows(true, 100), 3, "данных может не быть — высота та же");
+  assert.equal(meterRows(true, 15), 0, "в узком окне измерителя нет вовсе");
+  assert.equal(meterRows(false, 100), 0, "ffplay уровней не даёт");
+});
+
+test("пустые данные рисуются на полу шкалы, а не прячут полосу", () => {
+  // Пустая полоса честнее исчезнувшей: видно, что прибор жив, а звука нет.
+  assert.equal(litSegments(METER_FLOOR_DB, 40), 0);
+  assert.ok(METER_FLOOR_DB < METER_MIN_DB, "пол ниже нижнего края шкалы");
 });

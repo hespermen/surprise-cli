@@ -13,14 +13,20 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { litSegments, scaleRow, segmentDb, zoneOf } from "../player/meter.ts";
+import {
+  METER_CHANNEL_ROWS,
+  METER_FLOOR_DB,
+  litSegments,
+  scaleRow,
+  segmentDb,
+  zoneOf,
+} from "../player/meter.ts";
 import { theme } from "./theme.ts";
 
-/** Подписи каналов. Больше двух показываем номерами. */
+/** Подписи каналов. */
 function channelLabel(index: number, total: number): string {
-  if (total === 1) return "M";
-  if (total === 2) return index === 0 ? "L" : "R";
-  return String(index + 1);
+  if (total === 1) return index === 0 ? "M" : " ";
+  return index === 0 ? "L" : "R";
 }
 
 function zoneColor(db: number): string {
@@ -82,16 +88,25 @@ export function LevelMeter({
 }): React.ReactElement | null {
   // Два символа на подпись канала плюс поля рамки.
   const segments = Math.max(0, Math.min(64, width - 8));
-  if (segments < 12 || channelsDb.length === 0) return null;
+  if (segments < 12) return null;
+
+  // Ровно METER_CHANNEL_ROWS строк, сколько бы каналов ни пришло: недостающие
+  // рисуем на нуле, лишние не показываем. Пустой ответ опроса — обычное дело
+  // между тактами, и он не повод перестраивать экран.
+  const rows = Array.from({ length: METER_CHANNEL_ROWS }, (_, index) => ({
+    label: channelLabel(index, Math.max(1, channelsDb.length)),
+    db: channelsDb[index] ?? METER_FLOOR_DB,
+    peak: peaksDb[index] ?? channelsDb[index] ?? METER_FLOOR_DB,
+  }));
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {channelsDb.map((db, index) => (
+      {rows.map((row, index) => (
         <MeterRow
           key={index}
-          label={channelLabel(index, channelsDb.length)}
-          db={db}
-          peakDb={peaksDb[index] ?? db}
+          label={row.label}
+          db={row.db}
+          peakDb={row.peak}
           segments={segments}
         />
       ))}
