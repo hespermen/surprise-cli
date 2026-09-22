@@ -5,16 +5,23 @@
  * а из тех, что показывают, каждый делает это по-своему (kitty, iTerm2, sixel —
  * три несовместимых протокола). Блоки работают везде одинаково.
  *
- * По буквам проходит светлая полоса. Раньше здесь была радуга — каждая колонка
- * своим оттенком, — но она стоит на месте: движение в ней только кажущееся, от
- * смены цвета. Блик именно ДВИЖЕТСЯ, и глаз читает это как перелив.
+ * Логотип СТАТИЧЕН, и это решение, а не упрощение.
+ *
+ * Анимация красила каждый символ отдельным элементом — 265 узлов на пять строк, —
+ * и перерисовывала их пять раз в секунду. Перерисовка в ink идёт всем деревом
+ * сразу, поэтому вместе с логотипом заново собирались списки, подробности и
+ * измеритель: экран заметно вздрагивал. Украшение стоило дороже, чем всё
+ * остальное на экране вместе взятое.
+ *
+ * Теперь строка логотипа — один элемент, и перерисовка случается только когда
+ * меняется что-то по делу.
  */
 
 import { Box, Text } from "ink";
 import React from "react";
 
 import { colorEnabled } from "../ui/term.ts";
-import { beamIntensity, beamPosition, mixHex } from "./shimmer.ts";
+import { theme } from "./theme.ts";
 
 /**
  * Блочный шрифт, пять строк высотой.
@@ -94,50 +101,19 @@ function buildRows(): string[] {
 const ROWS = buildRows();
 const LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
 
-/** Базовый цвет букв и цвет в центре блика. */
-const BASE = "#6f7480";
-const GLOW = "#ffffff";
-/** Ширина полосы в колонках, в каждую сторону от центра. */
-const BEAM_HALF = 9;
-
-export function Logo({ frame, width }: { frame: number; width: number }): React.ReactElement | null {
+export function Logo({ width }: { width: number }): React.ReactElement | null {
   // Не влезает — не показываем: обрезанный логотип выглядит как сломанный
   // интерфейс.
   if (width < LOGO_WIDTH + 2) return null;
 
-  if (!colorEnabled()) {
-    return (
-      <Box flexDirection="column" paddingX={1}>
-        {ROWS.map((row, index) => (
-          <Text key={index} bold>
-            {row}
-          </Text>
-        ))}
-      </Box>
-    );
-  }
-
-  const beam = beamPosition(frame, LOGO_WIDTH, BEAM_HALF);
-
   return (
     <Box flexDirection="column" paddingX={1}>
-      {ROWS.map((row, rowIndex) => (
-        <Box key={rowIndex}>
-          {[...row].map((char, columnIndex) => {
-            if (char === " ") return <Text key={columnIndex}> </Text>;
-
-            // Строки чуть сдвинуты друг относительно друга: полоса идёт под
-            // наклоном, а не строго вертикально — ровная выглядит как шов.
-            const intensity =
-              beam === null ? 0 : beamIntensity(columnIndex + rowIndex * 2, beam, BEAM_HALF);
-
-            return (
-              <Text key={columnIndex} bold color={mixHex(BASE, GLOW, intensity)}>
-                {char}
-              </Text>
-            );
-          })}
-        </Box>
+      {ROWS.map((row, index) => (
+        // Одна строка — один элемент. Раньше здесь был элемент на каждый символ,
+        // и их было больше, чем во всём остальном интерфейсе.
+        <Text key={index} bold color={colorEnabled() ? theme.muted : undefined}>
+          {row}
+        </Text>
       ))}
     </Box>
   );

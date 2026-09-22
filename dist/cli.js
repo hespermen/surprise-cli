@@ -23153,41 +23153,6 @@ var init_Setup = __esm({
   }
 });
 
-// src/tui/shimmer.ts
-function beamIntensity(column, beam, halfWidth) {
-  if (halfWidth <= 0) return 0;
-  const distance = Math.abs(column - beam);
-  if (distance >= halfWidth) return 0;
-  return (Math.cos(distance / halfWidth * Math.PI) + 1) / 2;
-}
-function beamPosition(frame, width2, halfWidth, pauseFrames = 14) {
-  const travel = width2 + halfWidth * 2;
-  const cycle = travel + pauseFrames;
-  const step = frame % cycle;
-  if (step >= travel) return null;
-  return step - halfWidth;
-}
-function mixHex(from, to, ratio) {
-  const clamp = Math.min(1, Math.max(0, ratio));
-  const parse = (hex) => {
-    const value = hex.replace("#", "");
-    return [
-      Number.parseInt(value.slice(0, 2), 16),
-      Number.parseInt(value.slice(2, 4), 16),
-      Number.parseInt(value.slice(4, 6), 16)
-    ];
-  };
-  const [r1, g1, b1] = parse(from);
-  const [r2, g2, b2] = parse(to);
-  const channel = (a, b) => Math.round(a + (b - a) * clamp).toString(16).padStart(2, "0");
-  return `#${channel(r1, r2)}${channel(g1, g2)}${channel(b1, b2)}`;
-}
-var init_shimmer = __esm({
-  "src/tui/shimmer.ts"() {
-    "use strict";
-  }
-});
-
 // src/tui/Logo.tsx
 function packRows(top, bottom) {
   let out = "";
@@ -23206,26 +23171,22 @@ function buildRows() {
   }
   return rows;
 }
-function Logo({ frame, width: width2 }) {
+function Logo({ width: width2 }) {
   if (width2 < LOGO_WIDTH + 2) return null;
-  if (!colorEnabled()) {
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, children: row }, index)) });
-  }
-  const beam = beamPosition(frame, LOGO_WIDTH, BEAM_HALF);
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { children: [...row].map((char, columnIndex) => {
-    if (char === " ") return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: " " }, columnIndex);
-    const intensity = beam === null ? 0 : beamIntensity(columnIndex + rowIndex * 2, beam, BEAM_HALF);
-    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: mixHex(BASE, GLOW, intensity), children: char }, columnIndex);
-  }) }, rowIndex)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => (
+    // Одна строка — один элемент. Раньше здесь был элемент на каждый символ,
+    // и их было больше, чем во всём остальном интерфейсе.
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: colorEnabled() ? theme.muted : void 0, children: row }, index)
+  )) });
 }
-var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH, BASE, GLOW, BEAM_HALF;
+var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH;
 var init_Logo = __esm({
   async "src/tui/Logo.tsx"() {
     "use strict";
     await init_build2();
     import_react29 = __toESM(require_react(), 1);
     init_term();
-    init_shimmer();
+    init_theme();
     import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
     GLYPHS = {
       S: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "  \u2588", "\u2588\u2588\u2588"],
@@ -23259,9 +23220,6 @@ var init_Logo = __esm({
     }
     ROWS = buildRows();
     LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
-    BASE = "#6f7480";
-    GLOW = "#ffffff";
-    BEAM_HALF = 9;
   }
 });
 
@@ -23570,7 +23528,6 @@ function App2({
   const [setupChoice, setSetupChoice] = (0, import_react33.useState)(0);
   const [channels, setChannels] = (0, import_react33.useState)([]);
   const [peaks, setPeaks] = (0, import_react33.useState)([]);
-  const [frame, setFrame] = (0, import_react33.useState)(0);
   const [commandOpen, setCommandOpen] = (0, import_react33.useState)(false);
   const [commandInput, setCommandInput] = (0, import_react33.useState)("");
   const [commandHighlight, setCommandHighlight] = (0, import_react33.useState)(0);
@@ -23616,10 +23573,6 @@ function App2({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-  (0, import_react33.useEffect)(() => {
-    const timer = setInterval(() => setFrame((value) => (value + 1) % 1e5), 200);
-    return () => clearInterval(timer);
-  }, []);
   (0, import_react33.useEffect)(() => {
     void loadPrefs().then((loaded) => {
       applyPalette(loaded.theme);
@@ -24551,7 +24504,7 @@ function App2({
   const detailsBox = Math.max(5, bodyHeight - listBox);
   const listTitle = drill ? `${drill.title} \u2014 ${t("hint.back")}` : activeSection === "search" ? `${sectionListTitle("search")}: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${sectionListTitle(activeSection)} \u2014 ${t("hint.loading")}` : activeSection === "radio" ? `${sectionListTitle(activeSection)} \xB7 ${t("hint.radioInfo")}` : activeSection === "settings" ? `${sectionListTitle(activeSection)} \xB7 ${t("settings.hint")}` : sectionListTitle(activeSection);
   return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    showLogo ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Logo, { frame, width: width2 }) : null,
+    showLogo ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Logo, { width: width2 }) : null,
     /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
       /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
         Sidebar,

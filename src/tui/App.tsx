@@ -190,8 +190,6 @@ export function App({
   /** Уровни по каналам и удерживаемые пики — для измерителя. */
   const [channels, setChannels] = useState<number[]>([]);
   const [peaks, setPeaks] = useState<number[]>([]);
-  /** Кадр перелива логотипа. */
-  const [frame, setFrame] = useState(0);
 
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -252,17 +250,6 @@ export function App({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-
-  // Перелив логотипа. Пять кадров в секунду: глазу этого хватает на плавность,
-  // а перерисовка экрана чаще стоила бы заметно дороже самой анимации.
-  useEffect(() => {
-    // Счётчик НЕ обнуляем коротким периодом: длину цикла знает сам блик (ширина
-    // логотипа плюс полоса плюс пауза — под сотню кадров), и он берёт остаток
-    // сам. Прежние 60 обрывали проход на трёх четвертях, блик прыгал назад, а
-    // пауза между проходами не наступала ни разу.
-    const timer = setInterval(() => setFrame((value) => (value + 1) % 100_000), 200);
-    return () => clearInterval(timer);
-  }, []);
 
   // Настройки читаются один раз при запуске и сразу применяются к живым палитре
   // и словарю — иначе первый кадр нарисовался бы чужой темой и мигнул.
@@ -1459,7 +1446,7 @@ export function App({
 
   return (
     <Box flexDirection="column" width={width}>
-      {showLogo ? <Logo frame={frame} width={width} /> : null}
+      {showLogo ? <Logo width={width} /> : null}
 
       <Box>
         <Sidebar
