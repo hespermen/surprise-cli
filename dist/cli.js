@@ -23512,7 +23512,7 @@ function App2({
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
   (0, import_react32.useEffect)(() => {
-    const timer = setInterval(() => setFrame((value) => (value + 1) % 60), 200);
+    const timer = setInterval(() => setFrame((value) => (value + 1) % 1e5), 200);
     return () => clearInterval(timer);
   }, []);
   (0, import_react32.useEffect)(() => {
