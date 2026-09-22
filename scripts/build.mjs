@@ -15,6 +15,13 @@ await build({
   target: "node20",
   format: "esm",
   outfile: "dist/cli.js",
+  // Бандлим ВСЁ, без external.
+  //
+  // У пакета нет рантайм-зависимостей, и это его главное свойство: установка
+  // ничего не качает, а dist/cli.js работает сам по себе. Любой external сразу
+  // ломает это — модуль искался бы в node_modules, которого у глобально
+  // установленного CLI попросту нет.
+  //
   // Шебанг + шим require.
   //
   // qrcode — пакет CommonJS, и его серверная точка входа тянет require("fs").
@@ -29,7 +36,6 @@ await build({
       "const require = __cliCreateRequire(import.meta.url);",
     ].join("\n"),
   },
-  external: ["ink", "react", "react-devtools-core", "yoga-wasm-web"],
   logLevel: "info",
 });
 
