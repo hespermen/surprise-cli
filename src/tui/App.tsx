@@ -67,7 +67,20 @@ import { HelpOverlay } from "./HelpOverlay.tsx";
 import { LOGIN_METHODS, LoginOverlay, type LoginPhase } from "./LoginOverlay.tsx";
 import { ListPanel } from "./ListPanel.tsx";
 import { PlayerBar } from "./PlayerBar.tsx";
-import { SECTIONS, sectionById, type ColumnSpec, type SavedRow, type SectionId } from "./sections.ts";
+import {
+  SECTIONS,
+  sectionById,
+  type ColumnSpec,
+  type SavedRow,
+  type SectionId,
+  type SettingRow,
+} from "./sections.ts";
+import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, type Lang } from "./i18n.ts";
+import { THEMES, applyPalette } from "./theme.ts";
+import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
+import { Visualizer } from "./Visualizer.tsx";
+import { parseLevels } from "../player/levels.ts";
+import { isLiked, toggleLike, type LikeTarget } from "../api/library.ts";
 import { Sidebar } from "./Sidebar.tsx";
 import { theme } from "./theme.ts";
 import { usePlayer } from "./usePlayer.ts";
@@ -167,13 +180,33 @@ export function App({
   const [query, setQuery] = useState("");
   const [typing, setTyping] = useState(false);
 
+  const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang() });
+  /** История громкости для визуализатора, слева направо по времени. */
+  const [levels, setLevels] = useState<number[]>([]);
+
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [commandHighlight, setCommandHighlight] = useState(0);
   const [commandError, setCommandError] = useState<string | null>(null);
 
   const section = sectionById(activeSection);
-  const sectionRows = rowsBySection[activeSection] ?? [];
+  const settingRows = useMemo<SettingRow[]>(
+    () => [
+      {
+        key: "theme",
+        label: t("settings.theme"),
+        value: THEMES.find((candidate) => candidate.id === prefs.theme)?.label ?? prefs.theme,
+      },
+      {
+        key: "lang",
+        label: t("settings.language"),
+        value: LANGS.find((candidate) => candidate.id === prefs.lang)?.label ?? prefs.lang,
+      },
+    ],
+    [prefs],
+  );
+  const sectionRows: unknown[] =
+    activeSection === "settings" ? settingRows : (rowsBySection[activeSection] ?? []);
   const rows: readonly unknown[] = drill ? drill.rows : sectionRows;
   const selected = drill
     ? drill.selected
@@ -210,6 +243,16 @@ export function App({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
+
+  // Настройки читаются один раз при запуске и сразу применяются к живым палитре
+  // и словарю — иначе первый кадр нарисовался бы чужой темой и мигнул.
+  useEffect(() => {
+    void loadPrefs().then((loaded) => {
+      applyPalette(loaded.theme);
+      setLang(loaded.lang);
+      setPrefs(loaded);
+    });
+  }, []);
 
   // ── Эфир ──
 
@@ -455,6 +498,26 @@ export function App({
     say("Конец превью. Полный трек — по подписке или после покупки.");
   }, [now, status.positionSec, backend, say]);
 
+  // Уровни звука для визуализатора.
+  //
+  // Спрашиваем сами с частотой отрисовки, а не подписываемся: метаданные фильтра
+  // обновляются на каждый разобранный буфер — десятки раз в секунду, и на разбор
+  // событий ушло бы больше, чем на картинку. На паузе не спрашиваем вовсе:
+  // уровни там не меняются, а лента должна замирать вместе со звуком.
+  useEffect(() => {
+    if (!backend.levels) return;
+    const timer = setInterval(() => {
+      if (status.paused || status.idle) return;
+      void backend.levels?.().then((raw) => {
+        const { rmsDb } = parseLevels(raw);
+        // Держим ровно столько, сколько может поместиться в самую широкую
+        // строку: хранить больше незачем, а меньше — лента дёргалась бы.
+        setLevels((previous) => [...previous, rmsDb].slice(-200));
+      });
+    }, 120);
+    return () => clearInterval(timer);
+  }, [backend, status.paused, status.idle]);
+
   // ── Открытие карточки ──
 
   const openDrill = useCallback(
@@ -593,10 +656,26 @@ export function App({
         });
       }
 
+      case "settings": {
+        const setting = row as SettingRow;
+        const next: Prefs =
+          setting.key === "theme"
+            ? { ...prefs, theme: nextInCycle(THEMES.map((candidate) => candidate.id), prefs.theme) }
+            : { ...prefs, lang: nextInCycle(LANGS.map((candidate) => candidate.id), prefs.lang) as Lang };
+        // Применяем сразу, сохраняем в фоне: ждать записи на диск ради смены
+        // цвета — заметная задержка на ровном месте.
+        applyPalette(next.theme);
+        setLang(next.lang);
+        setPrefs(next);
+        void savePrefs(next);
+        return;
+      }
+
       default:
         say("Здесь пока нечего играть");
     }
   }, [
+    prefs,
     drill,
     sectionRows,
     selected,
@@ -610,6 +689,37 @@ export function App({
     openDrill,
     say,
   ]);
+
+  /**
+   * Избранное по клавише.
+   *
+   * Лайк ставится тому, что ВЫБРАНО в списке, а не тому, что играет: человек
+   * листает каталог и отмечает найденное, не трогая текущий трек. Состояние
+   * спрашиваем у сервера перед переключением — иначе две вкладки разошлись бы.
+   */
+  const toggleFavourite = useCallback(async () => {
+    if (!accessToken) return say(t("like.needAuth"));
+
+    const row = rows[selected];
+    const target = likeTargetOf(activeSection, drill, row);
+    if (!target) return say(t("like.unsupported"));
+
+    try {
+      const liked = await toggleLike(accessToken, userId, target.kind, target.id);
+      say(liked ? t("like.added") : t("like.removed"));
+      // Раздел «Избранное» показывает именно этот список — перечитаем его,
+      // иначе снятый лайк остался бы на экране.
+      if (activeSection === "likes") {
+        setRows((previous) => {
+          const next = { ...previous };
+          delete next.likes;
+          return next;
+        });
+      }
+    } catch (error) {
+      say(`Не вышло: ${(error as Error).message}`);
+    }
+  }, [accessToken, userId, rows, selected, activeSection, drill, say]);
 
   // ── Навигация ──
 
@@ -1076,6 +1186,10 @@ export function App({
       });
       return;
     }
+    if (input === "f") {
+      void toggleFavourite();
+      return;
+    }
     if (input === "n" || input === "p") {
       say("Очередь появится позже — пока выбирайте в списке");
       return;
@@ -1164,7 +1278,7 @@ export function App({
         badge: now.badge,
       };
     }
-    return { title: "Ничего не играет", subtitle: null, position: null, total: null, live: false, badge: null };
+    return { title: t("player.nothing"), subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
 
   if (login) return <LoginOverlay phase={login} width={width} />;
@@ -1175,14 +1289,16 @@ export function App({
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
 
   const listTitle = drill
-    ? `${drill.title} — Esc назад`
+    ? `${drill.title} — ${t("hint.back")}`
     : activeSection === "search"
-      ? `Поиск: ${query || "…"}${typing ? "▌" : ""}`
+      ? `${sectionListTitle("search")}: ${query || "…"}${typing ? "▌" : ""}`
       : loading === activeSection
-        ? `${section.listTitle} — загружаем…`
+        ? `${sectionListTitle(activeSection)} — ${t("hint.loading")}`
         : activeSection === "radio"
-          ? `${section.listTitle} · только для справки`
-          : section.listTitle;
+          ? `${sectionListTitle(activeSection)} · ${t("hint.radioInfo")}`
+          : activeSection === "settings"
+            ? `${sectionListTitle(activeSection)} · ${t("settings.hint")}`
+            : sectionListTitle(activeSection);
 
   return (
     <Box flexDirection="column" width={width}>
@@ -1190,7 +1306,7 @@ export function App({
         <Sidebar
           sections={SECTIONS.map((candidate, index) => ({
             id: candidate.id,
-            label: index < 9 ? `${index + 1} ${candidate.label}` : `  ${candidate.label}`,
+            label: index < 9 ? `${index + 1} ${sectionLabel(candidate.id)}` : `  ${sectionLabel(candidate.id)}`,
             needsAuth: candidate.needsAuth,
             group: candidate.group,
           }))}
@@ -1212,7 +1328,7 @@ export function App({
             height={listHeight}
             width={contentWidth}
             focused={focus === "list"}
-            emptyHint={section.needsAuth && !accessToken ? "Нужен вход — наберите /login" : section.emptyHint}
+            emptyHint={section.needsAuth && !accessToken ? t("empty.auth") : section.emptyHint}
           />
 
           <DetailsPanel
@@ -1234,6 +1350,11 @@ export function App({
         />
       ) : null}
 
+      {/* Визуализатор показываем только когда бэкенд реально даёт уровни: у
+          ffplay их взять неоткуда, и рисовать движение без данных значило бы
+          врать про звук. */}
+      {backend.levels ? <Visualizer history={levels} palette={theme} width={width} /> : null}
+
       <PlayerBar
         title={info.title}
         subtitle={info.subtitle}
@@ -1249,7 +1370,7 @@ export function App({
 
       <Box paddingX={1}>
         <Text color={message ? theme.paused : theme.muted}>
-          {message ?? "/ — команды · Tab — панели · j/k — список · Enter — играть · space — пауза · ? — помощь · q — выход"}
+          {message ?? t("hint.bar")}
         </Text>
       </Box>
     </Box>
@@ -1283,6 +1404,51 @@ function dropIfSame(value: string | null | undefined, title: string | null | und
 
 function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
   return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+}
+
+/**
+ * Что из выбранной строки можно отправить в избранное.
+ *
+ * Таблица likes полиморфна, но не всеядна: у неё есть колонки под выпуск, трек,
+ * релиз и плейлист — и ничего под артиста, автора или подписку. Возвращаем null
+ * там, где лайкать нечего, чтобы сказать об этом словами, а не молча проглотить
+ * нажатие.
+ */
+function likeTargetOf(
+  sectionId: SectionId,
+  drill: Drill | null,
+  row: unknown,
+): { kind: LikeTarget; id: string } | null {
+  if (!row) return null;
+
+  if (drill) {
+    const item = row as DrillRow;
+    return item.kind === "show"
+      ? { kind: "show", id: item.id }
+      : { kind: "track", id: item.track.id };
+  }
+
+  switch (sectionId) {
+    case "shows":
+    case "search":
+      return { kind: "show", id: (row as Show).id };
+    case "likes":
+      return { kind: "show", id: (row as LikedShow).id };
+    case "finds": {
+      const find = row as Find;
+      return find.show ? { kind: "show", id: find.show.id } : null;
+    }
+    case "releases":
+      return { kind: "release", id: (row as Release).id };
+    case "playlists":
+      return { kind: "playlist", id: (row as PlaylistSummary).id };
+    case "saved": {
+      const saved = row as SavedRow;
+      return saved.isShow ? { kind: "show", id: saved.id } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Строки, которые сами по себе являются выпуском (у них есть треклист). */

@@ -107,6 +107,11 @@ export class MpvBackend extends BackendEmitter implements AudioBackend {
         // Поток icecast рвётся на ровном месте: без этого одна сетевая икота
         // заканчивала бы эфир навсегда.
         "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
+        // Уровни для визуализатора считает сам mpv на ЗВУЧАЩЕМ потоке и отдаёт
+        // через af-metadata. Метка @vis нужна, чтобы к ним можно было обратиться
+        // по имени; reset=1 — чтобы значения были мгновенные, а не накопленные
+        // с начала трека (иначе картинка застынет через минуту).
+        "--af=@vis:lavfi=[astats=metadata=1:reset=1]",
         `--input-ipc-server=${socketPath}`,
       ],
       // stderr в трубу, а не в никуда: без него причина отказа теряется целиком.
@@ -324,6 +329,19 @@ export class MpvBackend extends BackendEmitter implements AudioBackend {
   #disarmWatchdog(): void {
     if (this.#watchdog) clearTimeout(this.#watchdog);
     this.#watchdog = null;
+  }
+
+  /**
+   * Текущие уровни звука или null, если их нет.
+   *
+   * Отдельным запросом, а не подпиской: observe_property на метаданные фильтра
+   * присылал бы событие на каждый разбор буфера — десятки раз в секунду, и мы бы
+   * тратили больше на разбор событий, чем на отрисовку. Интерфейс сам спрашивает
+   * с той частотой, с какой рисует.
+   */
+  async levels(): Promise<unknown> {
+    if (!this.#socket || this.#socket.destroyed) return null;
+    return this.#command(["get_property", "af-metadata/vis"]).catch(() => null);
   }
 
   async setPaused(paused: boolean): Promise<void> {

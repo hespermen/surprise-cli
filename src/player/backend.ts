@@ -49,6 +49,15 @@ export interface AudioBackend {
 
   status(): PlaybackStatus;
 
+  /**
+   * Сырые метаданные уровней звука или null.
+   *
+   * Необязательный метод: у ffplay нет управляющего канала, и взять уровни
+   * неоткуда. Интерфейс в этом случае визуализатор просто не показывает — рисовать
+   * движение без данных значит врать про звук.
+   */
+  levels?(): Promise<unknown>;
+
   on<E extends keyof AudioBackendEvents>(
     event: E,
     listener: (...args: AudioBackendEvents[E]) => void,

@@ -34,7 +34,8 @@ export type SectionId =
   | "finds"
   | "saved"
   | "following"
-  | "search";
+  | "search"
+  | "settings";
 
 export interface ColumnSpec<T> {
   header: string;
@@ -45,6 +46,7 @@ export interface ColumnSpec<T> {
 
 export interface SectionSpec<T = unknown> {
   id: SectionId;
+  /** Запасная подпись; на экран идёт перевод по id (см. i18n). */
   label: string;
   /** Пустая строка-разделитель перед группой в сайдбаре. */
   group: "station" | "catalog" | "library" | "tools";
@@ -238,6 +240,20 @@ export const SECTIONS: ReadonlyArray<SectionSpec<never>> = [
     },
   },
   {
+    id: "settings",
+    label: "Настройки",
+    group: "tools",
+    listTitle: "Настройки",
+    emptyHint: "",
+    columns: [
+      { header: "Настройка", width: 22, value: (row: SettingRow) => row.label },
+      { header: "Значение", width: 0, flex: true, value: (row: SettingRow) => row.value },
+    ],
+    // Строки настроек собирает интерфейс: их значения — его состояние, а не
+    // данные с сервера.
+    load: async () => [],
+  },
+  {
     id: "search",
     label: "Поиск",
     group: "tools",
@@ -262,6 +278,12 @@ export interface SavedRow {
   entityType: string;
   title: string;
   isShow: boolean;
+}
+
+export interface SettingRow {
+  key: "theme" | "lang";
+  label: string;
+  value: string;
 }
 
 export interface FollowRow {

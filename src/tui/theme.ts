@@ -1,27 +1,112 @@
 /**
- * Внешний вид TUI: цвета и рисование полос.
+ * Палитры и отрисовка полос.
  *
- * Собрано в одном месте, чтобы панели не расходились в оттенках и чтобы правка
- * палитры не превращалась в обход всех компонентов.
+ * `theme` — ЖИВОЙ объект, поля которого подменяет applyPalette. Компоненты
+ * читают его при отрисовке, поэтому смена темы доезжает до всех панелей сразу,
+ * без протаскивания палитры пропсом через каждую из них. Для настройки, которая
+ * меняется раз в жизни и одинакова для всего экрана, это честный размен.
  */
 
-export const theme = {
-  accent: "cyan",
-  accentDim: "blueBright",
-  playing: "green",
-  paused: "yellow",
-  danger: "red",
-  muted: "gray",
-  border: "gray",
-  borderActive: "cyan",
-  selectionBg: "blueBright",
-} as const;
+export interface Palette {
+  accent: string;
+  accentDim: string;
+  playing: string;
+  paused: string;
+  danger: string;
+  muted: string;
+  border: string;
+  borderActive: string;
+  selectionBg: string;
+}
+
+export interface ThemeSpec {
+  id: string;
+  /** Название на языке интерфейса не переводим: имена тем — имена. */
+  label: string;
+  palette: Palette;
+}
+
+export const THEMES: readonly ThemeSpec[] = [
+  {
+    id: "night",
+    label: "Night",
+    palette: {
+      accent: "cyan",
+      accentDim: "blueBright",
+      playing: "green",
+      paused: "yellow",
+      danger: "red",
+      muted: "gray",
+      border: "gray",
+      borderActive: "cyan",
+      selectionBg: "blueBright",
+    },
+  },
+  {
+    id: "ember",
+    label: "Ember",
+    palette: {
+      accent: "yellow",
+      accentDim: "redBright",
+      playing: "yellowBright",
+      paused: "magenta",
+      danger: "red",
+      muted: "gray",
+      border: "gray",
+      borderActive: "yellow",
+      selectionBg: "red",
+    },
+  },
+  {
+    id: "mono",
+    label: "Mono",
+    palette: {
+      // Одна из тем намеренно без цвета: терминалы бывают чёрно-белыми, а ещё
+      // так читают люди, которым цветовая подсветка мешает.
+      accent: "white",
+      accentDim: "gray",
+      playing: "whiteBright",
+      paused: "gray",
+      danger: "white",
+      muted: "gray",
+      border: "gray",
+      borderActive: "white",
+      selectionBg: "gray",
+    },
+  },
+  {
+    id: "bloom",
+    label: "Bloom",
+    palette: {
+      accent: "magenta",
+      accentDim: "magentaBright",
+      playing: "cyanBright",
+      paused: "yellow",
+      danger: "redBright",
+      muted: "gray",
+      border: "gray",
+      borderActive: "magenta",
+      selectionBg: "magenta",
+    },
+  },
+];
+
+export const DEFAULT_THEME = "night";
+
+function paletteOf(id: string): Palette {
+  return (THEMES.find((candidate) => candidate.id === id) ?? THEMES[0]!).palette;
+}
+
+export const theme: Palette = { ...paletteOf(DEFAULT_THEME) };
+
+export function applyPalette(id: string): void {
+  Object.assign(theme, paletteOf(id));
+}
 
 /**
  * Полоса прогресса.
  *
  * total = null — живой поток: конца у него нет, и шкала врала бы о позиции.
- * Возвращаем пустую строку, панель покажет одно лишь время.
  */
 export function bar(position: number | null, total: number | null, width: number): string {
   if (total === null || total <= 0 || width < 2) return "";

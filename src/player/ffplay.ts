@@ -235,4 +235,7 @@ export class FfplayBackend extends BackendEmitter implements AudioBackend {
     await this.#kill();
     this.#url = null;
   }
+
+  // levels() намеренно не реализован: у ffplay нет управляющего канала, и
+  // получить уровни звучащего потока неоткуда.
 }

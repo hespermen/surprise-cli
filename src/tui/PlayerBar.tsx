@@ -56,15 +56,35 @@ export function PlayerBar({
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.border} paddingX={1} width={width}>
       <Box>
-        <Text color={glyphColor}>{glyph} </Text>
-        <Text bold>{fit(title, headWidth)}</Text>
+        <Text color={glyphColor} bold>
+          {glyph}{" "}
+        </Text>
+        <Text bold>{fit(title, Math.max(10, inner - meta.length - 6))}</Text>
         {badge ? <Text color={theme.paused}> {badge}</Text> : null}
-        <Text>{"   "}</Text>
-        {!live && barWidth > 4 ? <Text color={theme.accent}>{bar(position, total, barWidth)} </Text> : null}
-        <Text color={theme.muted}>{clock}</Text>
-        <Text color={theme.muted}>{"  "}{meta}</Text>
+        <Box flexGrow={1} justifyContent="flex-end">
+          <Text color={theme.muted}>{meta}</Text>
+        </Box>
       </Box>
+
       {subtitle ? <Text color={theme.accentDim}>{fit(subtitle, inner)}</Text> : null}
+
+      {/* Прогресс отдельной строкой во всю ширину.
+          Раньше он делил строку с названием, временем и метаданными и
+          сжимался до огрызка в несколько символов — то есть переставал
+          отвечать на свой единственный вопрос «сколько осталось». */}
+      <Box>
+        <Text color={theme.accent} bold>
+          {formatDuration(position)}
+        </Text>
+        <Text> </Text>
+        {live ? (
+          <Text color={theme.playing}>{"━".repeat(Math.max(0, inner - 16))}</Text>
+        ) : (
+          <Text color={theme.accent}>{bar(position, total, Math.max(4, inner - 18))}</Text>
+        )}
+        <Text> </Text>
+        <Text color={theme.muted}>{live ? "" : formatDuration(total)}</Text>
+      </Box>
     </Box>
   );
 }

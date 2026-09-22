@@ -289,6 +289,34 @@ async function listLikedShows(accessToken, userId, limit = 50) {
   }
   return shows;
 }
+async function isLiked(accessToken, userId, target, entityId) {
+  const params = new URLSearchParams({
+    select: "id",
+    user_id: `eq.${userId}`,
+    [LIKE_COLUMN[target]]: `eq.${entityId}`,
+    limit: "1"
+  });
+  const rows = await request(restUrl(`likes?${params}`), {
+    headers: authHeaders(accessToken)
+  });
+  return rows?.[0]?.id ?? null;
+}
+async function toggleLike(accessToken, userId, target, entityId) {
+  const existing = await isLiked(accessToken, userId, target, entityId);
+  if (existing) {
+    await request(restUrl(`likes?id=eq.${existing}`), {
+      method: "DELETE",
+      headers: { ...authHeaders(accessToken), Prefer: "return=minimal" }
+    });
+    return false;
+  }
+  await request(restUrl("likes"), {
+    method: "POST",
+    headers: { ...authHeaders(accessToken), Prefer: "return=minimal" },
+    body: { user_id: userId, [LIKE_COLUMN[target]]: entityId }
+  });
+  return true;
+}
 async function listFinds(accessToken, userId, limit = 50) {
   const params = new URLSearchParams({
     select: "id,created_at,show_tracklist(id,artist,title,timestamp_sec,shows_v2(id,public_id,slug,title,status,hosts:host_id(tracklist_disabled)))",
@@ -402,13 +430,19 @@ async function resolveSubscriptionNames(accessToken, subscriptions) {
   );
   return names;
 }
-var PLAYLIST_SELECT;
+var PLAYLIST_SELECT, LIKE_COLUMN;
 var init_library = __esm({
   "src/api/library.ts"() {
     "use strict";
     init_http();
     init_showVisibility();
     PLAYLIST_SELECT = "id,public_id,slug,title,description,is_public,is_system,playlist_items(count)";
+    LIKE_COLUMN = {
+      show: "show_id",
+      track: "store_track_id",
+      release: "store_release_id",
+      playlist: "playlist_id"
+    };
   }
 });
 
@@ -702,13 +736,13 @@ async function persist(session) {
 function refreshOnce(stale) {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = withSessionLock(async () => {
-    const current = await readSession() ?? stale;
-    if (!isExpired(current.expires_at, REFRESH_MARGIN_SEC)) return current;
+    const current2 = await readSession() ?? stale;
+    if (!isExpired(current2.expires_at, REFRESH_MARGIN_SEC)) return current2;
     try {
       const data = await request(authUrl("token?grant_type=refresh_token"), {
         method: "POST",
         headers: anonHeaders(),
-        body: { refresh_token: current.refresh_token },
+        body: { refresh_token: current2.refresh_token },
         retries: 0
       });
       if (!data?.access_token || !data.refresh_token) {
@@ -723,7 +757,7 @@ function refreshOnce(stale) {
         await clearSession();
         return null;
       }
-      return current;
+      return current2;
     }
   }).finally(() => {
     refreshInFlight = null;
@@ -2102,16 +2136,16 @@ var require_dijkstra = __commonJS({
        */
       PriorityQueue: {
         make: function(opts) {
-          var T = dijkstra.PriorityQueue, t = {}, key;
+          var T = dijkstra.PriorityQueue, t2 = {}, key;
           opts = opts || {};
           for (key in T) {
             if (T.hasOwnProperty(key)) {
-              t[key] = T[key];
+              t2[key] = T[key];
             }
           }
-          t.queue = [];
-          t.sorter = opts.sorter || T.default_sorter;
-          return t;
+          t2.queue = [];
+          t2.sorter = opts.sorter || T.default_sorter;
+          return t2;
         },
         default_sorter: function(a, b) {
           return a.cost - b.cost;
@@ -5893,7 +5927,7 @@ var require_react_production_min = __commonJS({
     var p = Symbol.for("react.fragment");
     var q = Symbol.for("react.strict_mode");
     var r = Symbol.for("react.profiler");
-    var t = Symbol.for("react.provider");
+    var t2 = Symbol.for("react.provider");
     var u = Symbol.for("react.context");
     var v = Symbol.for("react.forward_ref");
     var w = Symbol.for("react.suspense");
@@ -6077,7 +6111,7 @@ var require_react_production_min = __commonJS({
     };
     exports.createContext = function(a) {
       a = { $$typeof: u, _currentValue: a, _currentValue2: a, _threadCount: 0, Provider: null, Consumer: null, _defaultValue: null, _globalName: null };
-      a.Provider = { $$typeof: t, _context: a };
+      a.Provider = { $$typeof: t2, _context: a };
       return a.Consumer = a;
     };
     exports.createElement = M;
@@ -7237,14 +7271,14 @@ var init_yoga_wasm_base64_esm = __esm({
               var u = b[1].toWireType(r, this);
               p[1] = u;
             }
-            for (var t = 0; t < l; ++t) n[t] = b[t + 2].toWireType(r, arguments[t]), p.push(n[t]);
-            t = d.apply(null, p);
+            for (var t2 = 0; t2 < l; ++t2) n[t2] = b[t2 + 2].toWireType(r, arguments[t2]), p.push(n[t2]);
+            t2 = d.apply(null, p);
             if (k) Wa(r);
             else for (var y = g ? 1 : 2; y < b.length; y++) {
               var B = 1 === y ? u : n[y - 2];
               null !== b[y].V && b[y].V(B);
             }
-            u = m ? b[0].fromWireType(t) : void 0;
+            u = m ? b[0].fromWireType(t2) : void 0;
             return u;
           };
         }
@@ -7526,10 +7560,10 @@ var init_yoga_wasm_base64_esm = __esm({
             V([a], f, (g) => {
               var k = {};
               e.forEach((m, l) => {
-                var n = g[l], p = m.ra, r = m.sa, u = g[l + e.length], t = m.ya, y = m.Aa;
+                var n = g[l], p = m.ra, r = m.sa, u = g[l + e.length], t2 = m.ya, y = m.Aa;
                 k[m.oa] = { read: (B) => n.fromWireType(p(r, B)), write: (B, ba) => {
                   var I = [];
-                  t(
+                  t2(
                     y,
                     B,
                     u.toWireType(I, ba)
@@ -7585,22 +7619,22 @@ var init_yoga_wasm_base64_esm = __esm({
             bb(u, function() {
               nb("Cannot construct " + n + " due to unbound types", [d]);
             });
-            V([a, b, c], d ? [d] : [], function(t) {
-              t = t[0];
+            V([a, b, c], d ? [d] : [], function(t2) {
+              t2 = t2[0];
               if (d) {
-                var y = t.N;
+                var y = t2.N;
                 var B = y.X;
               } else B = X.prototype;
-              t = Ba(u, function() {
+              t2 = Ba(u, function() {
                 if (Object.getPrototypeOf(this) !== ba) throw new K("Use 'new' to construct " + n);
                 if (void 0 === I.Y) throw new K(n + " has no accessible constructor");
                 var kb = I.Y[arguments.length];
                 if (void 0 === kb) throw new K("Tried to invoke ctor of " + n + " with invalid number of parameters (" + arguments.length + ") - expected (" + Object.keys(I.Y).toString() + ") parameters instead!");
                 return kb.apply(this, arguments);
               });
-              var ba = Object.create(B, { constructor: { value: t } });
-              t.prototype = ba;
-              var I = new cb(n, t, ba, r, y, f, k, l);
+              var ba = Object.create(B, { constructor: { value: t2 } });
+              t2.prototype = ba;
+              var I = new cb(n, t2, ba, r, y, f, k, l);
               y = new Y(n, I, true, false);
               B = new Y(n + "*", I, false, false);
               var lb = new Y(n + " const*", I, false, true);
@@ -7608,7 +7642,7 @@ var init_yoga_wasm_base64_esm = __esm({
                 pointerType: B,
                 la: lb
               };
-              ib(u, t);
+              ib(u, t2);
               return [y, B, lb];
             });
           },
@@ -7670,9 +7704,9 @@ var init_yoga_wasm_base64_esm = __esm({
               k && l.N.ja.push(b);
               var r = l.N.X, u = r[b];
               void 0 === u || void 0 === u.S && u.className !== l.name && u.Z === c - 2 ? (n.Z = c - 2, n.className = l.name, r[b] = n) : (ab(r, b, p), r[b].S[c - 2] = n);
-              V([], m, function(t) {
-                t = ob(p, t, l, f, g);
-                void 0 === r[b].S ? (t.Z = c - 2, r[b] = t) : r[b].S[c - 2] = t;
+              V([], m, function(t2) {
+                t2 = ob(p, t2, l, f, g);
+                void 0 === r[b].S ? (t2.Z = c - 2, r[b] = t2) : r[b].S[c - 2] = t2;
                 return [];
               });
               return [];
@@ -7813,8 +7847,8 @@ var init_yoga_wasm_base64_esm = __esm({
             } else 4 === b && (d = wb, e = xb, f = yb, g = () => E, k = 2);
             W(a, { name: c, fromWireType: function(m) {
               for (var l = E[m >> 2], n = g(), p, r = m + 4, u = 0; u <= l; ++u) {
-                var t = m + 4 + u * b;
-                if (u == l || 0 == n[t >> k]) r = d(r, t - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t + b;
+                var t2 = m + 4 + u * b;
+                if (u == l || 0 == n[t2 >> k]) r = d(r, t2 - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t2 + b;
               }
               S(m);
               return p;
@@ -8331,7 +8365,7 @@ function wrapAssembly(lib) {
     lib.Node.destroy(this);
   });
   patch(lib.Node.prototype, "freeRecursive", function() {
-    for (let t = 0, T = this.getChildCount(); t < T; ++t) {
+    for (let t2 = 0, T = this.getChildCount(); t2 < T; ++t2) {
       this.getChild(0).freeRecursive();
     }
     this.free();
@@ -8416,7 +8450,7 @@ var require_scheduler_production_min = __commonJS({
     var p;
     var q;
     var r = [];
-    var t = [];
+    var t2 = [];
     var u = 1;
     var v = null;
     var y = 3;
@@ -8428,11 +8462,11 @@ var require_scheduler_production_min = __commonJS({
     var F = "undefined" !== typeof setImmediate ? setImmediate : null;
     "undefined" !== typeof navigator && void 0 !== navigator.scheduling && void 0 !== navigator.scheduling.isInputPending && navigator.scheduling.isInputPending.bind(navigator.scheduling);
     function G(a) {
-      for (var b = h(t); null !== b; ) {
-        if (null === b.callback) k(t);
-        else if (b.startTime <= a) k(t), b.sortIndex = b.expirationTime, f(r, b);
+      for (var b = h(t2); null !== b; ) {
+        if (null === b.callback) k(t2);
+        else if (b.startTime <= a) k(t2), b.sortIndex = b.expirationTime, f(r, b);
         else break;
-        b = h(t);
+        b = h(t2);
       }
     }
     function H(a) {
@@ -8440,7 +8474,7 @@ var require_scheduler_production_min = __commonJS({
       G(a);
       if (!A) if (null !== h(r)) A = true, I(J);
       else {
-        var b = h(t);
+        var b = h(t2);
         null !== b && K(H, b.startTime - a);
       }
     }
@@ -8465,7 +8499,7 @@ var require_scheduler_production_min = __commonJS({
         }
         if (null !== v) var w = true;
         else {
-          var m = h(t);
+          var m = h(t2);
           null !== m && K(H, m.startTime - b);
           w = false;
         }
@@ -8601,7 +8635,7 @@ var require_scheduler_production_min = __commonJS({
       }
       e = c + e;
       a = { id: u++, callback: b, priorityLevel: a, startTime: c, expirationTime: e, sortIndex: -1 };
-      c > d ? (a.sortIndex = c, f(t, a), null === h(r) && a === h(t) && (B ? (E(L), L = -1) : B = true, K(H, c - d))) : (a.sortIndex = e, f(r, a), A || z || (A = true, I(J)));
+      c > d ? (a.sortIndex = c, f(t2, a), null === h(r) && a === h(t2) && (B ? (E(L), L = -1) : B = true, K(H, c - d))) : (a.sortIndex = e, f(r, a), A || z || (A = true, I(J)));
       return a;
     };
     exports.unstable_shouldYield = M;
@@ -9492,30 +9526,30 @@ var require_react_reconciler_production_min = __commonJS({
           return null;
         }
         function w(e2, g2, h2, k2) {
-          for (var l2 = null, m2 = null, u = g2, t = g2 = 0, E = null; null !== u && t < h2.length; t++) {
-            u.index > t ? (E = u, u = null) : E = u.sibling;
-            var y = p(e2, u, h2[t], k2);
+          for (var l2 = null, m2 = null, u = g2, t2 = g2 = 0, E = null; null !== u && t2 < h2.length; t2++) {
+            u.index > t2 ? (E = u, u = null) : E = u.sibling;
+            var y = p(e2, u, h2[t2], k2);
             if (null === y) {
               null === u && (u = E);
               break;
             }
             a && u && null === y.alternate && b(e2, u);
-            g2 = f(y, g2, t);
+            g2 = f(y, g2, t2);
             null === m2 ? l2 = y : m2.sibling = y;
             m2 = y;
             u = E;
           }
-          if (t === h2.length) return c(e2, u), F && kd(e2, t), l2;
+          if (t2 === h2.length) return c(e2, u), F && kd(e2, t2), l2;
           if (null === u) {
-            for (; t < h2.length; t++) u = r(e2, h2[t], k2), null !== u && (g2 = f(u, g2, t), null === m2 ? l2 = u : m2.sibling = u, m2 = u);
-            F && kd(e2, t);
+            for (; t2 < h2.length; t2++) u = r(e2, h2[t2], k2), null !== u && (g2 = f(u, g2, t2), null === m2 ? l2 = u : m2.sibling = u, m2 = u);
+            F && kd(e2, t2);
             return l2;
           }
-          for (u = d(e2, u); t < h2.length; t++) E = B(u, e2, t, h2[t], k2), null !== E && (a && null !== E.alternate && u.delete(null === E.key ? t : E.key), g2 = f(E, g2, t), null === m2 ? l2 = E : m2.sibling = E, m2 = E);
+          for (u = d(e2, u); t2 < h2.length; t2++) E = B(u, e2, t2, h2[t2], k2), null !== E && (a && null !== E.alternate && u.delete(null === E.key ? t2 : E.key), g2 = f(E, g2, t2), null === m2 ? l2 = E : m2.sibling = E, m2 = E);
           a && u.forEach(function(a2) {
             return b(e2, a2);
           });
-          F && kd(e2, t);
+          F && kd(e2, t2);
           return l2;
         }
         function Y(e2, g2, h2, k2) {
@@ -9523,15 +9557,15 @@ var require_react_reconciler_production_min = __commonJS({
           if ("function" !== typeof l2) throw Error(n(150));
           h2 = l2.call(h2);
           if (null == h2) throw Error(n(151));
-          for (var u = l2 = null, m2 = g2, t = g2 = 0, E = null, y = h2.next(); null !== m2 && !y.done; t++, y = h2.next()) {
-            m2.index > t ? (E = m2, m2 = null) : E = m2.sibling;
+          for (var u = l2 = null, m2 = g2, t2 = g2 = 0, E = null, y = h2.next(); null !== m2 && !y.done; t2++, y = h2.next()) {
+            m2.index > t2 ? (E = m2, m2 = null) : E = m2.sibling;
             var w2 = p(e2, m2, y.value, k2);
             if (null === w2) {
               null === m2 && (m2 = E);
               break;
             }
             a && m2 && null === w2.alternate && b(e2, m2);
-            g2 = f(w2, g2, t);
+            g2 = f(w2, g2, t2);
             null === u ? l2 = w2 : u.sibling = w2;
             u = w2;
             m2 = E;
@@ -9539,17 +9573,17 @@ var require_react_reconciler_production_min = __commonJS({
           if (y.done) return c(
             e2,
             m2
-          ), F && kd(e2, t), l2;
+          ), F && kd(e2, t2), l2;
           if (null === m2) {
-            for (; !y.done; t++, y = h2.next()) y = r(e2, y.value, k2), null !== y && (g2 = f(y, g2, t), null === u ? l2 = y : u.sibling = y, u = y);
-            F && kd(e2, t);
+            for (; !y.done; t2++, y = h2.next()) y = r(e2, y.value, k2), null !== y && (g2 = f(y, g2, t2), null === u ? l2 = y : u.sibling = y, u = y);
+            F && kd(e2, t2);
             return l2;
           }
-          for (m2 = d(e2, m2); !y.done; t++, y = h2.next()) y = B(m2, e2, t, y.value, k2), null !== y && (a && null !== y.alternate && m2.delete(null === y.key ? t : y.key), g2 = f(y, g2, t), null === u ? l2 = y : u.sibling = y, u = y);
+          for (m2 = d(e2, m2); !y.done; t2++, y = h2.next()) y = B(m2, e2, t2, y.value, k2), null !== y && (a && null !== y.alternate && m2.delete(null === y.key ? t2 : y.key), g2 = f(y, g2, t2), null === u ? l2 = y : u.sibling = y, u = y);
           a && m2.forEach(function(a2) {
             return b(e2, a2);
           });
-          F && kd(e2, t);
+          F && kd(e2, t2);
           return l2;
         }
         function ya(a2, d2, f2, h2) {
@@ -12383,8 +12417,8 @@ var require_react_reconciler_production_min = __commonJS({
                     break a;
                   case 1:
                     h = k;
-                    var u = f.type, t = f.stateNode;
-                    if (0 === (f.flags & 128) && ("function" === typeof u.getDerivedStateFromError || null !== t && "function" === typeof t.componentDidCatch && (null === Mf || !Mf.has(t)))) {
+                    var u = f.type, t2 = f.stateNode;
+                    if (0 === (f.flags & 128) && ("function" === typeof u.getDerivedStateFromError || null !== t2 && "function" === typeof t2.componentDidCatch && (null === Mf || !Mf.has(t2)))) {
                       f.flags |= 65536;
                       b &= -b;
                       f.lanes |= b;
@@ -12625,8 +12659,8 @@ var require_react_reconciler_production_min = __commonJS({
               var u = a.current;
               for (T = u; null !== T; ) {
                 g = T;
-                var t = g.child;
-                if (0 !== (g.subtreeFlags & 2064) && null !== t) t.return = g, T = t;
+                var t2 = g.child;
+                if (0 !== (g.subtreeFlags & 2064) && null !== t2) t2.return = g, T = t2;
                 else b: for (g = u; null !== T; ) {
                   h = T;
                   if (0 !== (h.flags & 2048)) try {
@@ -14124,7 +14158,7 @@ var init_slice_ansi = __esm({
         output = output.filter((element, index) => output.indexOf(element) === index);
         if (endAnsiCode !== void 0) {
           const fistEscapeCode = wrapAnsi2(ansi_styles_default.codes.get(Number.parseInt(endAnsiCode, 10)));
-          output = output.reduce((current, next) => next === fistEscapeCode ? [next, ...current] : [...current, next], []);
+          output = output.reduce((current2, next) => next === fistEscapeCode ? [next, ...current2] : [...current2, next], []);
         }
       }
       return output.join("");
@@ -21928,6 +21962,12 @@ var init_catalog = __esm({
 });
 
 // src/tui/theme.ts
+function paletteOf(id) {
+  return (THEMES.find((candidate) => candidate.id === id) ?? THEMES[0]).palette;
+}
+function applyPalette(id) {
+  Object.assign(theme, paletteOf(id));
+}
 function bar(position, total, width2) {
   if (total === null || total <= 0 || width2 < 2) return "";
   const ratio = Math.min(1, Math.max(0, (position ?? 0) / total));
@@ -21945,21 +21985,76 @@ function padTo(text, width2) {
   const length = [...text].length;
   return length >= width2 ? fit(text, width2) : text + " ".repeat(width2 - length);
 }
-var theme;
+var THEMES, DEFAULT_THEME, theme;
 var init_theme = __esm({
   "src/tui/theme.ts"() {
     "use strict";
-    theme = {
-      accent: "cyan",
-      accentDim: "blueBright",
-      playing: "green",
-      paused: "yellow",
-      danger: "red",
-      muted: "gray",
-      border: "gray",
-      borderActive: "cyan",
-      selectionBg: "blueBright"
-    };
+    THEMES = [
+      {
+        id: "night",
+        label: "Night",
+        palette: {
+          accent: "cyan",
+          accentDim: "blueBright",
+          playing: "green",
+          paused: "yellow",
+          danger: "red",
+          muted: "gray",
+          border: "gray",
+          borderActive: "cyan",
+          selectionBg: "blueBright"
+        }
+      },
+      {
+        id: "ember",
+        label: "Ember",
+        palette: {
+          accent: "yellow",
+          accentDim: "redBright",
+          playing: "yellowBright",
+          paused: "magenta",
+          danger: "red",
+          muted: "gray",
+          border: "gray",
+          borderActive: "yellow",
+          selectionBg: "red"
+        }
+      },
+      {
+        id: "mono",
+        label: "Mono",
+        palette: {
+          // Одна из тем намеренно без цвета: терминалы бывают чёрно-белыми, а ещё
+          // так читают люди, которым цветовая подсветка мешает.
+          accent: "white",
+          accentDim: "gray",
+          playing: "whiteBright",
+          paused: "gray",
+          danger: "white",
+          muted: "gray",
+          border: "gray",
+          borderActive: "white",
+          selectionBg: "gray"
+        }
+      },
+      {
+        id: "bloom",
+        label: "Bloom",
+        palette: {
+          accent: "magenta",
+          accentDim: "magentaBright",
+          playing: "cyanBright",
+          paused: "yellow",
+          danger: "redBright",
+          muted: "gray",
+          border: "gray",
+          borderActive: "magenta",
+          selectionBg: "magenta"
+        }
+      }
+    ];
+    DEFAULT_THEME = "night";
+    theme = { ...paletteOf(DEFAULT_THEME) };
   }
 });
 
@@ -22121,19 +22216,19 @@ var init_commands = __esm({
 function wrap2(text, width2, maxLines) {
   const words = text.replace(/\s+/g, " ").trim().split(" ");
   const lines = [];
-  let current = "";
+  let current2 = "";
   for (const word of words) {
-    if (current.length === 0) {
-      current = word;
-    } else if ([...current].length + 1 + [...word].length <= width2) {
-      current += ` ${word}`;
+    if (current2.length === 0) {
+      current2 = word;
+    } else if ([...current2].length + 1 + [...word].length <= width2) {
+      current2 += ` ${word}`;
     } else {
-      lines.push(current);
-      current = word;
+      lines.push(current2);
+      current2 = word;
       if (lines.length === maxLines) break;
     }
   }
-  if (lines.length < maxLines && current) lines.push(current);
+  if (lines.length < maxLines && current2) lines.push(current2);
   const trimmed = lines.slice(0, maxLines);
   const last = trimmed[trimmed.length - 1];
   if (last && lines.length >= maxLines && words.length > 0) {
@@ -22251,6 +22346,7 @@ var init_HelpOverlay = __esm({
           ["h / l", "\u043F\u0430\u043D\u0435\u043B\u044C \u0440\u0430\u0437\u0434\u0435\u043B\u043E\u0432 / \u0441\u043F\u0438\u0441\u043E\u043A"],
           ["1 \u2026 9", "\u0441\u0440\u0430\u0437\u0443 \u0432 \u0440\u0430\u0437\u0434\u0435\u043B"],
           ["Enter", "\u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0438\u043B\u0438 \u0438\u0433\u0440\u0430\u0442\u044C"],
+          ["f", "\u0432 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u0438 \u043E\u0431\u0440\u0430\u0442\u043D\u043E"],
           ["/", "\u043F\u043E\u0438\u0441\u043A"]
         ]
       },
@@ -22269,6 +22365,7 @@ var init_HelpOverlay = __esm({
         title: "\u041F\u0440\u043E\u0447\u0435\u0435",
         rows: [
           ["?", "\u044D\u0442\u0430 \u0441\u043F\u0440\u0430\u0432\u043A\u0430"],
+          ["\u0440\u0430\u0437\u0434\u0435\u043B \xAB\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438\xBB", "\u0442\u0435\u043C\u0430 \u0438 \u044F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430"],
           ["q", "\u0432\u044B\u0445\u043E\u0434"]
         ]
       }
@@ -22279,16 +22376,16 @@ var init_HelpOverlay = __esm({
 // src/tui/LoginOverlay.tsx
 function wrap3(text, width2) {
   const lines = [];
-  let current = "";
+  let current2 = "";
   for (const word of text.split(/\s+/)) {
-    if (!current) current = word;
-    else if ([...current].length + 1 + [...word].length <= width2) current += ` ${word}`;
+    if (!current2) current2 = word;
+    else if ([...current2].length + 1 + [...word].length <= width2) current2 += ` ${word}`;
     else {
-      lines.push(current);
-      current = word;
+      lines.push(current2);
+      current2 = word;
     }
   }
-  if (current) lines.push(current);
+  if (current2) lines.push(current2);
   return lines;
 }
 function LoginOverlay({ phase, width: width2 }) {
@@ -22480,27 +22577,25 @@ function PlayerBar({
   const barWidth = Math.max(0, inner - clock.length - meta.length - headWidth - 6);
   return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: glyphColor, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: glyphColor, bold: true, children: [
         glyph,
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: fit(title, Math.max(10, inner - meta.length - 6)) }),
       badge ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.paused, children: [
         " ",
         badge
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: "   " }),
-      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.accent, children: [
-        bar(position, total, barWidth),
-        " "
-      ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: clock }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.muted, children: [
-        "  ",
-        meta
-      ] })
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexGrow: 1, justifyContent: "flex-end", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: meta }) })
     ] }),
-    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
+    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.accent, bold: true, children: formatDuration(position) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: " " }),
+      live ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.playing, children: "\u2501".repeat(Math.max(0, inner - 16)) }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.accent, children: bar(position, total, Math.max(4, inner - 18)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: " " }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: live ? "" : formatDuration(total) })
+    ] })
   ] });
 }
 var import_react27, import_jsx_runtime6;
@@ -22701,6 +22796,20 @@ var init_sections = __esm({
         }
       },
       {
+        id: "settings",
+        label: "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+        group: "tools",
+        listTitle: "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+        emptyHint: "",
+        columns: [
+          { header: "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430", width: 22, value: (row) => row.label },
+          { header: "\u0417\u043D\u0430\u0447\u0435\u043D\u0438\u0435", width: 0, flex: true, value: (row) => row.value }
+        ],
+        // Строки настроек собирает интерфейс: их значения — его состояние, а не
+        // данные с сервера.
+        load: async () => []
+      },
+      {
         id: "search",
         label: "\u041F\u043E\u0438\u0441\u043A",
         group: "tools",
@@ -22722,6 +22831,300 @@ var init_sections = __esm({
   }
 });
 
+// src/tui/i18n.ts
+function setLang(lang) {
+  current = lang;
+}
+function getLang() {
+  return current;
+}
+function t(key) {
+  return DICTIONARIES[current][key];
+}
+function sectionLabel(id) {
+  return t(`section.${id}`);
+}
+function sectionListTitle(id) {
+  return t(`list.${id}`);
+}
+var LANGS, RU, EN, DICTIONARIES, current;
+var init_i18n = __esm({
+  "src/tui/i18n.ts"() {
+    "use strict";
+    LANGS = [
+      { id: "ru", label: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439" },
+      { id: "en", label: "English" }
+    ];
+    RU = {
+      "sections.title": "\u0420\u0430\u0437\u0434\u0435\u043B\u044B",
+      "section.radio": "\u042D\u0444\u0438\u0440",
+      "section.shows": "\u041D\u043E\u0432\u043E\u0435",
+      "section.artists": "\u0420\u0435\u0437\u0438\u0434\u0435\u043D\u0442\u044B",
+      "section.hosts": "\u0410\u0432\u0442\u043E\u0440\u044B",
+      "section.releases": "\u041C\u0443\u0437\u044B\u043A\u0430",
+      "section.playlists": "\u041C\u043E\u044F \u043A\u043E\u043B\u043B\u0435\u043A\u0446\u0438\u044F",
+      "section.likes": "\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+      "section.finds": "\u041C\u043E\u0438 \u043D\u0430\u0445\u043E\u0434\u043A\u0438",
+      "section.saved": "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435",
+      "section.following": "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438",
+      "section.search": "\u041F\u043E\u0438\u0441\u043A",
+      "section.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+      "list.radio": "\u042D\u0444\u0438\u0440 \u2014 \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435",
+      "list.shows": "\u041D\u043E\u0432\u043E\u0435 \u2014 \u0441\u0432\u0435\u0436\u0438\u0435 \u0432\u044B\u043F\u0443\u0441\u043A\u0438",
+      "list.artists": "\u0420\u0435\u0437\u0438\u0434\u0435\u043D\u0442\u044B",
+      "list.hosts": "\u0410\u0432\u0442\u043E\u0440\u044B",
+      "list.releases": "\u041C\u0443\u0437\u044B\u043A\u0430 \u2014 \u0440\u0435\u043B\u0438\u0437\u044B",
+      "list.playlists": "\u041C\u043E\u044F \u043A\u043E\u043B\u043B\u0435\u043A\u0446\u0438\u044F \u2014 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B",
+      "list.likes": "\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+      "list.finds": "\u041C\u043E\u0438 \u043D\u0430\u0445\u043E\u0434\u043A\u0438",
+      "list.saved": "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435",
+      "list.following": "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438",
+      "list.search": "\u041F\u043E\u0438\u0441\u043A",
+      "list.settings": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438",
+      "col.when": "\u041A\u043E\u0433\u0434\u0430",
+      "col.show": "\u0412\u044B\u043F\u0443\u0441\u043A",
+      "col.start": "\u041D\u0430\u0447\u0430\u043B\u043E",
+      "col.artists": "\u0410\u0440\u0442\u0438\u0441\u0442\u044B",
+      "col.duration": "\u0414\u043B\u0438\u0442.",
+      "col.name": "\u0418\u043C\u044F",
+      "col.release": "\u0420\u0435\u043B\u0438\u0437",
+      "col.date": "\u0414\u0430\u0442\u0430",
+      "col.playlist": "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442",
+      "col.tracks": "\u0422\u0440\u0435\u043A\u043E\u0432",
+      "col.track": "\u0422\u0440\u0435\u043A",
+      "col.fromShow": "\u0418\u0437 \u0432\u044B\u043F\u0443\u0441\u043A\u0430",
+      "col.mark": "\u041C\u0435\u0442\u043A\u0430",
+      "col.what": "\u0427\u0442\u043E",
+      "col.kind": "\u0422\u0438\u043F",
+      "col.who": "\u041A\u0442\u043E",
+      "col.title": "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435",
+      "col.setting": "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430",
+      "col.value": "\u0417\u043D\u0430\u0447\u0435\u043D\u0438\u0435",
+      "empty.radio": "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E",
+      "empty.generic": "\u0421\u043F\u0438\u0441\u043E\u043A \u043F\u0443\u0441\u0442",
+      "empty.nobody": "\u041D\u0438\u043A\u043E\u0433\u043E \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
+      "empty.releases": "\u0420\u0435\u043B\u0438\u0437\u043E\u0432 \u043D\u0435 \u043D\u0430\u0448\u043B\u0438",
+      "empty.playlists": "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      "empty.likes": "\u041B\u0430\u0439\u043A\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      "empty.finds": "\u041D\u0430\u0445\u043E\u0434\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      "empty.saved": "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0433\u043E \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      "empty.following": "\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      "empty.search": "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0437\u0430\u043F\u0440\u043E\u0441 \u2014 \u043C\u0438\u043D\u0438\u043C\u0443\u043C \u0434\u0432\u0435 \u0431\u0443\u043A\u0432\u044B",
+      "empty.auth": "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login",
+      "player.nothing": "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442",
+      "player.live": "\u044D\u0444\u0438\u0440",
+      "hint.bar": "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 f \u2014 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434",
+      "hint.radioInfo": "\u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438",
+      "hint.loading": "\u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026",
+      "hint.back": "Esc \u043D\u0430\u0437\u0430\u0434",
+      "settings.theme": "\u0422\u0435\u043C\u0430",
+      "settings.language": "\u042F\u0437\u044B\u043A",
+      "settings.hint": "Enter \u043F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0435\u0442",
+      "like.added": "\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E \u0432 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
+      "like.removed": "\u0423\u0431\u0440\u0430\u043D\u043E \u0438\u0437 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0433\u043E",
+      "like.needAuth": "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login",
+      "like.unsupported": "\u042D\u0442\u043E \u0432 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u043D\u0435 \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C"
+    };
+    EN = {
+      "sections.title": "Sections",
+      "section.radio": "Live",
+      "section.shows": "New",
+      "section.artists": "Residents",
+      "section.hosts": "Hosts",
+      "section.releases": "Music",
+      "section.playlists": "My collection",
+      "section.likes": "Favourites",
+      "section.finds": "My finds",
+      "section.saved": "Saved",
+      "section.following": "Following",
+      "section.search": "Search",
+      "section.settings": "Settings",
+      "list.radio": "Live \u2014 schedule",
+      "list.shows": "New \u2014 latest episodes",
+      "list.artists": "Residents",
+      "list.hosts": "Hosts",
+      "list.releases": "Music \u2014 releases",
+      "list.playlists": "My collection \u2014 playlists",
+      "list.likes": "Favourites",
+      "list.finds": "My finds",
+      "list.saved": "Saved",
+      "list.following": "Following",
+      "list.search": "Search",
+      "list.settings": "Settings",
+      "col.when": "When",
+      "col.show": "Episode",
+      "col.start": "Started",
+      "col.artists": "Artists",
+      "col.duration": "Length",
+      "col.name": "Name",
+      "col.release": "Release",
+      "col.date": "Date",
+      "col.playlist": "Playlist",
+      "col.tracks": "Tracks",
+      "col.track": "Track",
+      "col.fromShow": "From episode",
+      "col.mark": "Mark",
+      "col.what": "What",
+      "col.kind": "Kind",
+      "col.who": "Who",
+      "col.title": "Title",
+      "col.setting": "Setting",
+      "col.value": "Value",
+      "empty.radio": "Schedule is unavailable",
+      "empty.generic": "Nothing here",
+      "empty.nobody": "Nobody found",
+      "empty.releases": "No releases found",
+      "empty.playlists": "No playlists yet",
+      "empty.likes": "No favourites yet",
+      "empty.finds": "No finds yet",
+      "empty.saved": "Nothing saved yet",
+      "empty.following": "Not following anyone yet",
+      "empty.search": "Type at least two letters",
+      "empty.auth": "Sign in first \u2014 type /login",
+      "player.nothing": "Nothing is playing",
+      "player.live": "live",
+      "hint.bar": "/ \u2014 commands \xB7 Tab \u2014 panels \xB7 j/k \u2014 list \xB7 Enter \u2014 play \xB7 f \u2014 favourite \xB7 ? \u2014 help \xB7 q \u2014 quit",
+      "hint.radioInfo": "for reference only",
+      "hint.loading": "loading\u2026",
+      "hint.back": "Esc to go back",
+      "settings.theme": "Theme",
+      "settings.language": "Language",
+      "settings.hint": "Enter to switch",
+      "like.added": "Added to favourites",
+      "like.removed": "Removed from favourites",
+      "like.needAuth": "Sign in first \u2014 type /login",
+      "like.unsupported": "This can't be favourited"
+    };
+    DICTIONARIES = { ru: RU, en: EN };
+    current = "ru";
+  }
+});
+
+// src/tui/prefs.ts
+import { mkdir as mkdir3, readFile as readFile3, rename as rename2, rm as rm3, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname3, join as join4 } from "node:path";
+function prefsPath() {
+  return process.env.SURPRISE_PREFS_PATH ?? join4(configDir(), "prefs.json");
+}
+function sanitize(value) {
+  if (!value || typeof value !== "object") return { ...DEFAULTS };
+  const raw = value;
+  const theme2 = THEMES.some((candidate) => candidate.id === raw.theme) ? raw.theme : DEFAULTS.theme;
+  const lang = LANGS.some((candidate) => candidate.id === raw.lang) ? raw.lang : DEFAULTS.lang;
+  return { theme: theme2, lang };
+}
+async function loadPrefs() {
+  try {
+    return sanitize(JSON.parse(await readFile3(prefsPath(), "utf8")));
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+async function savePrefs(prefs) {
+  const target = prefsPath();
+  await mkdir3(dirname3(target), { recursive: true, mode: 448 });
+  const tmp = `${target}.${process.pid}.tmp`;
+  try {
+    await writeFile3(tmp, JSON.stringify(prefs, null, 2), { encoding: "utf8", mode: 384 });
+    await rename2(tmp, target);
+  } catch {
+    await rm3(tmp, { force: true }).catch(() => {
+    });
+  }
+}
+function nextInCycle(items, current2) {
+  const index = items.indexOf(current2);
+  return items[(index + 1) % items.length] ?? items[0];
+}
+var DEFAULTS;
+var init_prefs = __esm({
+  "src/tui/prefs.ts"() {
+    "use strict";
+    init_session();
+    init_theme();
+    init_i18n();
+    DEFAULTS = { theme: DEFAULT_THEME, lang: "ru" };
+  }
+});
+
+// src/player/levels.ts
+function toDb(value) {
+  const parsed = typeof value === "string" ? Number.parseFloat(value) : typeof value === "number" ? value : Number.NaN;
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(SILENCE_DB, Math.min(0, parsed));
+}
+function parseLevels(metadata) {
+  if (!metadata || typeof metadata !== "object") return SILENT;
+  const entries = metadata;
+  const channels = [];
+  let overallRms = null;
+  let overallPeak = null;
+  for (const [key, raw] of Object.entries(entries)) {
+    const match = /^lavfi\.astats\.(Overall|\d+)\.(RMS_level|Peak_level)$/.exec(key);
+    if (!match) continue;
+    const [, scope, kind] = match;
+    const db = toDb(raw);
+    if (db === null) continue;
+    if (scope === "Overall") {
+      if (kind === "RMS_level") overallRms = db;
+      else overallPeak = db;
+      continue;
+    }
+    if (kind === "RMS_level") channels.push({ index: Number(scope), db });
+  }
+  channels.sort((a, b) => a.index - b.index);
+  const channelsDb = channels.map((channel) => channel.db);
+  const rmsDb = overallRms ?? (channelsDb.length ? Math.max(...channelsDb) : SILENCE_DB);
+  const peakDb = overallPeak ?? rmsDb;
+  return { rmsDb, peakDb, channelsDb };
+}
+function levelToRatio(db, floorDb = SILENCE_DB) {
+  if (!Number.isFinite(db)) return 0;
+  const clamped = Math.max(floorDb, Math.min(0, db));
+  const linear = (clamped - floorDb) / (0 - floorDb);
+  return Math.pow(linear, 1.6);
+}
+var SILENCE_DB, SILENT;
+var init_levels = __esm({
+  "src/player/levels.ts"() {
+    "use strict";
+    SILENCE_DB = -60;
+    SILENT = { rmsDb: SILENCE_DB, peakDb: SILENCE_DB, channelsDb: [] };
+  }
+});
+
+// src/tui/Visualizer.tsx
+function Visualizer({
+  history,
+  palette,
+  width: width2
+}) {
+  if (width2 < 8) return null;
+  const visible = history.slice(-width2);
+  const padded = [...Array(Math.max(0, width2 - visible.length)).fill(Number.NEGATIVE_INFINITY), ...visible];
+  const cells = padded.map((db) => {
+    const ratio = levelToRatio(db);
+    if (ratio <= 0) return { glyph: " ", loud: false };
+    const index = Math.min(BLOCKS.length - 1, Math.max(0, Math.round(ratio * (BLOCKS.length - 1))));
+    return { glyph: BLOCKS[index] ?? " ", loud: ratio > 0.72 };
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: palette.accent, children: cells.map((cell) => cell.loud ? "" : cell.glyph).join("") }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginLeft: -cells.length, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: palette.playing, bold: true, children: cells.map((cell) => cell.loud ? cell.glyph : " ").join("") }) })
+  ] });
+}
+var import_react28, import_jsx_runtime7, BLOCKS;
+var init_Visualizer = __esm({
+  async "src/tui/Visualizer.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react28 = __toESM(require_react(), 1);
+    init_levels();
+    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+    BLOCKS = ["\u2581", "\u2582", "\u2583", "\u2584", "\u2585", "\u2586", "\u2587", "\u2588"];
+  }
+});
+
 // src/tui/Sidebar.tsx
 function Sidebar({
   sections,
@@ -22736,7 +23139,7 @@ function Sidebar({
   let lastGroup;
   const from = Math.min(Math.max(0, selectedIndex - Math.floor(height / 2)), Math.max(0, sections.length - height));
   const visible = sections.slice(from, from + height);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -22745,7 +23148,7 @@ function Sidebar({
       paddingX: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
         visible.map((section, offset) => {
           const index = from + offset;
           const isActive = section.id === activeId;
@@ -22753,9 +23156,9 @@ function Sidebar({
           const locked = section.needsAuth && !hasAuth;
           const groupChanged = section.group !== void 0 && section.group !== lastGroup;
           lastGroup = section.group;
-          return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_react28.default.Fragment, { children: [
-            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_react29.default.Fragment, { children: [
+            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
               Text,
               {
                 color: locked ? theme.muted : isActive ? theme.accent : void 0,
@@ -22773,22 +23176,22 @@ function Sidebar({
     }
   );
 }
-var import_react28, import_jsx_runtime7;
+var import_react29, import_jsx_runtime8;
 var init_Sidebar = __esm({
   async "src/tui/Sidebar.tsx"() {
     "use strict";
     await init_build2();
-    import_react28 = __toESM(require_react(), 1);
+    import_react29 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/usePlayer.ts
 function usePlayer(backend) {
-  const [status, setStatus] = (0, import_react29.useState)(backend?.status() ?? IDLE);
-  const pending = (0, import_react29.useRef)(null);
-  (0, import_react29.useEffect)(() => {
+  const [status, setStatus] = (0, import_react30.useState)(backend?.status() ?? IDLE);
+  const pending = (0, import_react30.useRef)(null);
+  (0, import_react30.useEffect)(() => {
     if (!backend) return;
     const flush = setInterval(() => {
       if (!pending.current) return;
@@ -22810,11 +23213,11 @@ function usePlayer(backend) {
   }, [backend]);
   return status;
 }
-var import_react29, IDLE, THROTTLE_MS;
+var import_react30, IDLE, THROTTLE_MS;
 var init_usePlayer = __esm({
   "src/tui/usePlayer.ts"() {
     "use strict";
-    import_react29 = __toESM(require_react(), 1);
+    import_react30 = __toESM(require_react(), 1);
     IDLE = { positionSec: null, durationSec: null, paused: false, idle: true };
     THROTTLE_MS = 250;
   }
@@ -22832,46 +23235,63 @@ function App2({
   userId: initialUserId,
   onExit
 }) {
-  const [accessToken, setAccessToken] = (0, import_react30.useState)(initialToken);
-  const [userId, setUserId] = (0, import_react30.useState)(initialUserId);
-  const [login, setLogin] = (0, import_react30.useState)(null);
+  const [accessToken, setAccessToken] = (0, import_react31.useState)(initialToken);
+  const [userId, setUserId] = (0, import_react31.useState)(initialUserId);
+  const [login, setLogin] = (0, import_react31.useState)(null);
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const status = usePlayer(backend);
   const width2 = clampSize(stdout?.columns, 100, 40);
   const height = clampSize(stdout?.rows, 30, 12);
-  const [focus, setFocus] = (0, import_react30.useState)("list");
-  const [sectionIndex, setSectionIndex] = (0, import_react30.useState)(0);
-  const [activeSection, setActiveSection] = (0, import_react30.useState)("radio");
-  const [rowsBySection, setRows] = (0, import_react30.useState)({});
-  const [selectedBySection, setSelected] = (0, import_react30.useState)({});
-  const [loading, setLoading] = (0, import_react30.useState)(null);
-  const [message, setMessage] = (0, import_react30.useState)(null);
-  const [drill, setDrill] = (0, import_react30.useState)(null);
-  const [now, setNow] = (0, import_react30.useState)(null);
-  const [volume, setVolume] = (0, import_react30.useState)(100);
-  const [mutedFrom, setMutedFrom] = (0, import_react30.useState)(100);
-  const [showHelp, setShowHelp] = (0, import_react30.useState)(false);
-  const [radioNow, setRadioNow] = (0, import_react30.useState)(null);
-  const [streamUrl, setStreamUrl] = (0, import_react30.useState)(null);
-  const [tracklist, setTracklist] = (0, import_react30.useState)([]);
-  const [detailShow, setDetailShow] = (0, import_react30.useState)(null);
-  const [query, setQuery] = (0, import_react30.useState)("");
-  const [typing, setTyping] = (0, import_react30.useState)(false);
-  const [commandOpen, setCommandOpen] = (0, import_react30.useState)(false);
-  const [commandInput, setCommandInput] = (0, import_react30.useState)("");
-  const [commandHighlight, setCommandHighlight] = (0, import_react30.useState)(0);
-  const [commandError, setCommandError] = (0, import_react30.useState)(null);
+  const [focus, setFocus] = (0, import_react31.useState)("list");
+  const [sectionIndex, setSectionIndex] = (0, import_react31.useState)(0);
+  const [activeSection, setActiveSection] = (0, import_react31.useState)("radio");
+  const [rowsBySection, setRows] = (0, import_react31.useState)({});
+  const [selectedBySection, setSelected] = (0, import_react31.useState)({});
+  const [loading, setLoading] = (0, import_react31.useState)(null);
+  const [message, setMessage] = (0, import_react31.useState)(null);
+  const [drill, setDrill] = (0, import_react31.useState)(null);
+  const [now, setNow] = (0, import_react31.useState)(null);
+  const [volume, setVolume] = (0, import_react31.useState)(100);
+  const [mutedFrom, setMutedFrom] = (0, import_react31.useState)(100);
+  const [showHelp, setShowHelp] = (0, import_react31.useState)(false);
+  const [radioNow, setRadioNow] = (0, import_react31.useState)(null);
+  const [streamUrl, setStreamUrl] = (0, import_react31.useState)(null);
+  const [tracklist, setTracklist] = (0, import_react31.useState)([]);
+  const [detailShow, setDetailShow] = (0, import_react31.useState)(null);
+  const [query, setQuery] = (0, import_react31.useState)("");
+  const [typing, setTyping] = (0, import_react31.useState)(false);
+  const [prefs, setPrefs] = (0, import_react31.useState)({ theme: THEMES[0].id, lang: getLang() });
+  const [levels, setLevels] = (0, import_react31.useState)([]);
+  const [commandOpen, setCommandOpen] = (0, import_react31.useState)(false);
+  const [commandInput, setCommandInput] = (0, import_react31.useState)("");
+  const [commandHighlight, setCommandHighlight] = (0, import_react31.useState)(0);
+  const [commandError, setCommandError] = (0, import_react31.useState)(null);
   const section = sectionById(activeSection);
-  const sectionRows = rowsBySection[activeSection] ?? [];
+  const settingRows = (0, import_react31.useMemo)(
+    () => [
+      {
+        key: "theme",
+        label: t("settings.theme"),
+        value: THEMES.find((candidate) => candidate.id === prefs.theme)?.label ?? prefs.theme
+      },
+      {
+        key: "lang",
+        label: t("settings.language"),
+        value: LANGS.find((candidate) => candidate.id === prefs.lang)?.label ?? prefs.lang
+      }
+    ],
+    [prefs]
+  );
+  const sectionRows = activeSection === "settings" ? settingRows : rowsBySection[activeSection] ?? [];
   const rows = drill ? drill.rows : sectionRows;
   const selected = drill ? drill.selected : Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, sectionRows.length - 1));
-  const say = (0, import_react30.useCallback)((text) => setMessage(text), []);
-  const setSelectedFor = (0, import_react30.useCallback)(
+  const say = (0, import_react31.useCallback)((text) => setMessage(text), []);
+  const setSelectedFor = (0, import_react31.useCallback)(
     (id, value) => setSelected((previous) => ({ ...previous, [id]: value })),
     []
   );
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
     const spec = sectionById(activeSection);
     if (spec.needsAuth && !accessToken) return;
@@ -22888,7 +23308,14 @@ function App2({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-  const playRadio = (0, import_react30.useCallback)(async () => {
+  (0, import_react31.useEffect)(() => {
+    void loadPrefs().then((loaded) => {
+      applyPalette(loaded.theme);
+      setLang(loaded.lang);
+      setPrefs(loaded);
+    });
+  }, []);
+  const playRadio = (0, import_react31.useCallback)(async () => {
     const url = streamUrl;
     if (!url) return;
     try {
@@ -22907,7 +23334,7 @@ function App2({
       say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
     }
   }, [backend, streamUrl, say]);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     void (async () => {
       const settings = await fetchStationSettings();
       const url = await resolveLiveStream(settings);
@@ -22928,7 +23355,7 @@ function App2({
       }
     })();
   }, []);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     const refresh = async () => {
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
@@ -22946,7 +23373,7 @@ function App2({
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
     let channelId = null;
@@ -22964,7 +23391,7 @@ function App2({
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     if (activeSection !== "search") return;
     if (query.trim().length < 2) {
       setRows((previous) => ({ ...previous, search: [] }));
@@ -22976,7 +23403,7 @@ function App2({
     return () => clearTimeout(timer);
   }, [query, activeSection, accessToken]);
   const selectedRow = rows[selected];
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     const show = asShow(activeSection, drill, selectedRow);
     if (!show) {
       setDetailShow(null);
@@ -22992,7 +23419,7 @@ function App2({
       cancelled = true;
     };
   }, [activeSection, drill, selectedRow, accessToken]);
-  const playShow = (0, import_react30.useCallback)(
+  const playShow = (0, import_react31.useCallback)(
     async (show) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${show.title ?? "\u0432\u044B\u043F\u0443\u0441\u043A"}\xBB\u2026`);
       const stream = await fetchShowStream(show.id, accessToken).catch(() => null);
@@ -23019,7 +23446,7 @@ function App2({
     },
     [backend, accessToken, say]
   );
-  const playById = (0, import_react30.useCallback)(
+  const playById = (0, import_react31.useCallback)(
     async (showId) => {
       const show = await findShowById(showId, accessToken).catch(() => null);
       if (!show) {
@@ -23031,7 +23458,7 @@ function App2({
     },
     [accessToken, playShow, say]
   );
-  const playStoreTrack = (0, import_react30.useCallback)(
+  const playStoreTrack = (0, import_react31.useCallback)(
     async (track) => {
       if (!accessToken) {
         say("\u0422\u0440\u0435\u043A\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
@@ -23064,18 +23491,29 @@ function App2({
     },
     [accessToken, backend, say]
   );
-  const previewArmed = import_react30.default.useRef(false);
-  (0, import_react30.useEffect)(() => {
+  const previewArmed = import_react31.default.useRef(false);
+  (0, import_react31.useEffect)(() => {
     previewArmed.current = false;
   }, [now]);
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     const { stop, armed } = previewCutoff(status.positionSec, now?.previewEndSec ?? null, previewArmed.current);
     previewArmed.current = armed;
     if (!stop) return;
     void backend.setPaused(true);
     say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
   }, [now, status.positionSec, backend, say]);
-  const openDrill = (0, import_react30.useCallback)(
+  (0, import_react31.useEffect)(() => {
+    if (!backend.levels) return;
+    const timer = setInterval(() => {
+      if (status.paused || status.idle) return;
+      void backend.levels?.().then((raw) => {
+        const { rmsDb } = parseLevels(raw);
+        setLevels((previous) => [...previous, rmsDb].slice(-200));
+      });
+    }, 120);
+    return () => clearInterval(timer);
+  }, [backend, status.paused, status.idle]);
+  const openDrill = (0, import_react31.useCallback)(
     async (title, load) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${title}\xBB\u2026`);
       const loaded = await load().catch(() => []);
@@ -23089,7 +23527,7 @@ function App2({
     },
     [say]
   );
-  const activate = (0, import_react30.useCallback)(async () => {
+  const activate = (0, import_react31.useCallback)(async () => {
     if (drill) {
       const row2 = drill.rows[drill.selected];
       if (!row2) return;
@@ -23187,10 +23625,20 @@ function App2({
           });
         });
       }
+      case "settings": {
+        const setting = row;
+        const next = setting.key === "theme" ? { ...prefs, theme: nextInCycle(THEMES.map((candidate) => candidate.id), prefs.theme) } : { ...prefs, lang: nextInCycle(LANGS.map((candidate) => candidate.id), prefs.lang) };
+        applyPalette(next.theme);
+        setLang(next.lang);
+        setPrefs(next);
+        void savePrefs(next);
+        return;
+      }
       default:
         say("\u0417\u0434\u0435\u0441\u044C \u043F\u043E\u043A\u0430 \u043D\u0435\u0447\u0435\u0433\u043E \u0438\u0433\u0440\u0430\u0442\u044C");
     }
   }, [
+    prefs,
     drill,
     sectionRows,
     selected,
@@ -23204,7 +23652,26 @@ function App2({
     openDrill,
     say
   ]);
-  const moveSelection = (0, import_react30.useCallback)(
+  const toggleFavourite = (0, import_react31.useCallback)(async () => {
+    if (!accessToken) return say(t("like.needAuth"));
+    const row = rows[selected];
+    const target = likeTargetOf(activeSection, drill, row);
+    if (!target) return say(t("like.unsupported"));
+    try {
+      const liked = await toggleLike(accessToken, userId, target.kind, target.id);
+      say(liked ? t("like.added") : t("like.removed"));
+      if (activeSection === "likes") {
+        setRows((previous) => {
+          const next = { ...previous };
+          delete next.likes;
+          return next;
+        });
+      }
+    } catch (error) {
+      say(`\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
+    }
+  }, [accessToken, userId, rows, selected, activeSection, drill, say]);
+  const moveSelection = (0, import_react31.useCallback)(
     (delta) => {
       if (focus === "sidebar") {
         setSectionIndex((previous) => Math.min(SECTIONS2.length - 1, Math.max(0, previous + delta)));
@@ -23220,7 +23687,7 @@ function App2({
     },
     [focus, drill, activeSection, sectionRows.length, selected, setSelectedFor]
   );
-  const openSection = (0, import_react30.useCallback)((index) => {
+  const openSection = (0, import_react31.useCallback)((index) => {
     const target = SECTIONS2[index];
     if (!target) return;
     setSectionIndex(index);
@@ -23229,15 +23696,15 @@ function App2({
     setFocus("list");
     setTyping(target.id === "search");
   }, []);
-  const gotoSection = (0, import_react30.useCallback)(
+  const gotoSection = (0, import_react31.useCallback)(
     (id) => {
       const index = SECTIONS2.findIndex((candidate) => candidate.id === id);
       if (index >= 0) openSection(index);
     },
     [openSection]
   );
-  const loginAbort = import_react30.default.useRef(null);
-  const applySession = (0, import_react30.useCallback)(
+  const loginAbort = import_react31.default.useRef(null);
+  const applySession = (0, import_react31.useCallback)(
     (session) => {
       setAccessToken(session.access_token);
       setUserId(session.user_id);
@@ -23250,7 +23717,7 @@ function App2({
     },
     [say]
   );
-  const submitEmailLogin = (0, import_react30.useCallback)(
+  const submitEmailLogin = (0, import_react31.useCallback)(
     async (email, password) => {
       setLogin({ kind: "email", email, password, field: "password", busy: true });
       try {
@@ -23266,7 +23733,7 @@ function App2({
     },
     [applySession]
   );
-  const startTelegram = (0, import_react30.useCallback)(async () => {
+  const startTelegram = (0, import_react31.useCallback)(async () => {
     setLogin({ kind: "starting" });
     let pending;
     try {
@@ -23301,7 +23768,7 @@ function App2({
     }
     setLogin({ kind: "failed", error: result.error, hint: null });
   }, [applySession]);
-  const startBrowser = (0, import_react30.useCallback)(async () => {
+  const startBrowser = (0, import_react31.useCallback)(async () => {
     setLogin({ kind: "starting" });
     let pending;
     try {
@@ -23337,11 +23804,11 @@ function App2({
     }
     setLogin({ kind: "failed", error: result.error, hint: null });
   }, [applySession]);
-  const startLogin = (0, import_react30.useCallback)(() => {
+  const startLogin = (0, import_react31.useCallback)(() => {
     setCommandOpen(false);
     setLogin({ kind: "choose", index: 0 });
   }, []);
-  const doLogout = (0, import_react30.useCallback)(async () => {
+  const doLogout = (0, import_react31.useCallback)(async () => {
     await logout().catch(() => {
     });
     setAccessToken(null);
@@ -23351,8 +23818,8 @@ function App2({
     setDrill(null);
     say("\u0412\u044B\u0448\u043B\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430");
   }, [say]);
-  const suggestions = (0, import_react30.useMemo)(() => suggestCommands(commandInput), [commandInput]);
-  const runCommand = (0, import_react30.useCallback)(
+  const suggestions = (0, import_react31.useMemo)(() => suggestCommands(commandInput), [commandInput]);
+  const runCommand = (0, import_react31.useCallback)(
     async (raw) => {
       const parsed = parseCommand(raw);
       if (!parsed) return setCommandOpen(false);
@@ -23583,6 +24050,10 @@ function App2({
       });
       return;
     }
+    if (input === "f") {
+      void toggleFavourite();
+      return;
+    }
     if (input === "n" || input === "p") {
       say("\u041E\u0447\u0435\u0440\u0435\u0434\u044C \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u043F\u043E\u0437\u0436\u0435 \u2014 \u043F\u043E\u043A\u0430 \u0432\u044B\u0431\u0438\u0440\u0430\u0439\u0442\u0435 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435");
       return;
@@ -23604,7 +24075,7 @@ function App2({
       });
     }
   });
-  const playingIndex = (0, import_react30.useMemo)(() => {
+  const playingIndex = (0, import_react31.useMemo)(() => {
     if (drill) {
       return drill.rows.findIndex((row) => row.kind === "show" && row.id === now?.showId);
     }
@@ -23618,7 +24089,7 @@ function App2({
     if (activeSection === "likes") return sectionRows.findIndex((show) => show.id === now.showId);
     return -1;
   }, [drill, activeSection, sectionRows, radioNow, now?.showId]);
-  const details = (0, import_react30.useMemo)(() => {
+  const details = (0, import_react31.useMemo)(() => {
     if (!rows[selected]) return null;
     if (detailShow) {
       const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
@@ -23638,7 +24109,7 @@ function App2({
     }
     return describeRow(activeSection, drill, rows[selected]);
   }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection, drill]);
-  const info = (0, import_react30.useMemo)(() => {
+  const info = (0, import_react31.useMemo)(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
@@ -23663,22 +24134,22 @@ function App2({
         badge: now.badge
       };
     }
-    return { title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442", subtitle: null, position: null, total: null, live: false, badge: null };
+    return { title: t("player.nothing"), subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
-  if (login) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(LoginOverlay, { phase: login, width: width2 });
-  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HelpOverlay, { width: width2 });
+  if (login) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(LoginOverlay, { phase: login, width: width2 });
+  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(HelpOverlay, { width: width2 });
   const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
   const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6));
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
-  const listTitle = drill ? `${drill.title} \u2014 Esc \u043D\u0430\u0437\u0430\u0434` : activeSection === "search" ? `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${section.listTitle} \u2014 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026` : activeSection === "radio" ? `${section.listTitle} \xB7 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438` : section.listTitle;
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+  const listTitle = drill ? `${drill.title} \u2014 ${t("hint.back")}` : activeSection === "search" ? `${sectionListTitle("search")}: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${sectionListTitle(activeSection)} \u2014 ${t("hint.loading")}` : activeSection === "radio" ? `${sectionListTitle(activeSection)} \xB7 ${t("hint.radioInfo")}` : activeSection === "settings" ? `${sectionListTitle(activeSection)} \xB7 ${t("settings.hint")}` : sectionListTitle(activeSection);
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
         Sidebar,
         {
           sections: SECTIONS2.map((candidate, index) => ({
             id: candidate.id,
-            label: index < 9 ? `${index + 1} ${candidate.label}` : `  ${candidate.label}`,
+            label: index < 9 ? `${index + 1} ${sectionLabel(candidate.id)}` : `  ${sectionLabel(candidate.id)}`,
             needsAuth: candidate.needsAuth,
             group: candidate.group
           })),
@@ -23690,8 +24161,8 @@ function App2({
           height: bodyHeight - 2
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
           ListPanel,
           {
             title: listTitle,
@@ -23702,10 +24173,10 @@ function App2({
             height: listHeight,
             width: contentWidth,
             focused: focus === "list",
-            emptyHint: section.needsAuth && !accessToken ? "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login" : section.emptyHint
+            emptyHint: section.needsAuth && !accessToken ? t("empty.auth") : section.emptyHint
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
           DetailsPanel,
           {
             details,
@@ -23716,7 +24187,7 @@ function App2({
         )
       ] })
     ] }),
-    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       CommandLine,
       {
         input: commandInput,
@@ -23726,7 +24197,8 @@ function App2({
         error: commandError
       }
     ) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    backend.levels ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Visualizer, { history: levels, palette: theme, width: width2 }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       PlayerBar,
       {
         title: info.title,
@@ -23741,7 +24213,7 @@ function App2({
         width: width2
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? t("hint.bar") }) })
   ] });
 }
 function splitBurst(input) {
@@ -23758,6 +24230,34 @@ function dropIfSame(value, title) {
 }
 function sameText(a, b) {
   return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+}
+function likeTargetOf(sectionId, drill, row) {
+  if (!row) return null;
+  if (drill) {
+    const item = row;
+    return item.kind === "show" ? { kind: "show", id: item.id } : { kind: "track", id: item.track.id };
+  }
+  switch (sectionId) {
+    case "shows":
+    case "search":
+      return { kind: "show", id: row.id };
+    case "likes":
+      return { kind: "show", id: row.id };
+    case "finds": {
+      const find = row;
+      return find.show ? { kind: "show", id: find.show.id } : null;
+    }
+    case "releases":
+      return { kind: "release", id: row.id };
+    case "playlists":
+      return { kind: "playlist", id: row.id };
+    case "saved": {
+      const saved = row;
+      return saved.isShow ? { kind: "show", id: saved.id } : null;
+    }
+    default:
+      return null;
+  }
 }
 function asShow(sectionId, drill, row) {
   if (!row || drill) return null;
@@ -23857,12 +24357,12 @@ function describeRow(sectionId, drill, row) {
       return null;
   }
 }
-var import_react30, import_jsx_runtime8, SIDEBAR_WIDTH, DRILL_COLUMNS;
+var import_react31, import_jsx_runtime9, SIDEBAR_WIDTH, DRILL_COLUMNS;
 var init_App2 = __esm({
   async "src/tui/App.tsx"() {
     "use strict";
     await init_build2();
-    import_react30 = __toESM(require_react(), 1);
+    import_react31 = __toESM(require_react(), 1);
     init_radio();
     init_catalog();
     init_shows();
@@ -23884,10 +24384,16 @@ var init_App2 = __esm({
     await init_ListPanel();
     await init_PlayerBar();
     init_sections();
+    init_i18n();
+    init_theme();
+    init_prefs();
+    await init_Visualizer();
+    init_levels();
+    init_library();
     await init_Sidebar();
     init_theme();
     init_usePlayer();
-    import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
     SIDEBAR_WIDTH = 24;
     DRILL_COLUMNS = [
       { header: "", width: 6, value: (row) => row.kind === "track" ? "\u0442\u0440\u0435\u043A" : "\u0432\u044B\u043F\u0443\u0441\u043A" },
@@ -24484,6 +24990,8 @@ var FfplayBackend = class extends BackendEmitter {
     await this.#kill();
     this.#url = null;
   }
+  // levels() намеренно не реализован: у ffplay нет управляющего канала, и
+  // получить уровни звучащего потока неоткуда.
 };
 
 // src/player/mpv.ts
@@ -24552,6 +25060,11 @@ var MpvBackend = class extends BackendEmitter {
         // Поток icecast рвётся на ровном месте: без этого одна сетевая икота
         // заканчивала бы эфир навсегда.
         "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
+        // Уровни для визуализатора считает сам mpv на ЗВУЧАЩЕМ потоке и отдаёт
+        // через af-metadata. Метка @vis нужна, чтобы к ним можно было обратиться
+        // по имени; reset=1 — чтобы значения были мгновенные, а не накопленные
+        // с начала трека (иначе картинка застынет через минуту).
+        "--af=@vis:lavfi=[astats=metadata=1:reset=1]",
         `--input-ipc-server=${socketPath}`
       ],
       // stderr в трубу, а не в никуда: без него причина отказа теряется целиком.
@@ -24731,6 +25244,18 @@ var MpvBackend = class extends BackendEmitter {
   #disarmWatchdog() {
     if (this.#watchdog) clearTimeout(this.#watchdog);
     this.#watchdog = null;
+  }
+  /**
+   * Текущие уровни звука или null, если их нет.
+   *
+   * Отдельным запросом, а не подпиской: observe_property на метаданные фильтра
+   * присылал бы событие на каждый разбор буфера — десятки раз в секунду, и мы бы
+   * тратили больше на разбор событий, чем на отрисовку. Интерфейс сам спрашивает
+   * с той частотой, с какой рисует.
+   */
+  async levels() {
+    if (!this.#socket || this.#socket.destroyed) return null;
+    return this.#command(["get_property", "af-metadata/vis"]).catch(() => null);
   }
   async setPaused(paused) {
     await this.#command(["set_property", "pause", paused]);
@@ -25373,10 +25898,10 @@ async function radioCommand(argv) {
   const accessToken = session?.access_token ?? null;
   const sessionId = getSessionId();
   const channelId = await fetchLiveChannelId();
-  let current = null;
+  let current2 = null;
   const playback = startPlayback({
     backend,
-    describe: () => formatRadioItem(current) || "\u044D\u0444\u0438\u0440",
+    describe: () => formatRadioItem(current2) || "\u044D\u0444\u0438\u0440",
     hint: "space \u2014 \u043F\u0430\u0443\u0437\u0430, q \u2014 \u0432\u044B\u0445\u043E\u0434",
     cleanup: async () => {
       if (channelId) await leavePresence(sessionId, accessToken);
@@ -25384,11 +25909,11 @@ async function radioCommand(argv) {
     },
     // Позиция берётся не у плеера, а из расписания: у бесконечного потока своей
     // позиции нет, а человеку интересно, сколько уже идёт текущий выпуск.
-    progress: () => ({ position: elapsedSec(current), total: current?.duration ?? null }),
+    progress: () => ({ position: elapsedSec(current2), total: current2?.duration ?? null }),
     render: (state, position, total, width2) => {
       const clock = total ? `${formatDuration(position)} / ${formatDuration(total)}` : formatDuration(position);
       const bar2 = progressBar(position, total, Math.max(0, Math.min(20, width2 - 46)));
-      const head = truncate(formatRadioItem(current) || "\u044D\u0444\u0438\u0440", Math.max(10, width2 - clock.length - bar2.length - 8));
+      const head = truncate(formatRadioItem(current2) || "\u044D\u0444\u0438\u0440", Math.max(10, width2 - clock.length - bar2.length - 8));
       return `${stateMark(state)} ${bold(head)} ${bar2 ? `${dim(bar2)} ` : ""}${dim(clock)}`;
     }
   });
@@ -25408,8 +25933,8 @@ async function radioCommand(argv) {
     const schedule = await fetchRadioSchedule().catch(() => null);
     if (!schedule) return;
     const label = formatRadioItem(schedule.now);
-    const previous = formatRadioItem(current);
-    current = schedule.now;
+    const previous = formatRadioItem(current2);
+    current2 = schedule.now;
     if (label && label !== previous) {
       playback.say(`${cyan("\u266A")} ${bold(label)}`);
       const description = schedule.now?.show?.description?.replace(/\s+/g, " ").trim();
@@ -25462,14 +25987,14 @@ async function tuiCommand() {
     );
   }
   const session = await getValidSession();
-  const [{ render: render2 }, React18, { App: App3 }] = await Promise.all([
+  const [{ render: render2 }, React19, { App: App3 }] = await Promise.all([
     init_build2().then(() => build_exports),
     Promise.resolve().then(() => __toESM(require_react(), 1)),
     init_App2().then(() => App_exports)
   ]);
   await backend.start();
   const instance = render2(
-    React18.createElement(App3, {
+    React19.createElement(App3, {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,
