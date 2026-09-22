@@ -44,13 +44,15 @@ import {
 } from "../api/store.ts";
 import {
   TelegramUnavailableError,
+  LoginNotDeployedError,
   logout as logoutSession,
   loginWithPassword,
+  startBrowserLogin,
   startTelegramLogin,
   waitForTelegramLogin,
 } from "../net/auth.ts";
 import { parseJwt } from "../net/jwt.ts";
-import { renderQr } from "../ui/term.ts";
+import { openUrl, renderQr } from "../ui/term.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
 import { getListenerId, getSessionId } from "../lib/ids.ts";
@@ -678,12 +680,64 @@ export function App({
       kind: "waiting",
       url: pending.url,
       qr,
+      code: null,
       secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1000)),
     });
 
     const abort = new AbortController();
     loginAbort.current = abort;
 
+    const result = await waitForTelegramLogin(pending, {
+      signal: abort.signal,
+      onTick: (secondsLeft) =>
+        setLogin((previous) => (previous?.kind === "waiting" ? { ...previous, secondsLeft } : previous)),
+    });
+    loginAbort.current = null;
+
+    if (result.status === "ok") return applySession(result.session);
+    if (result.status === "expired") {
+      setLogin({ kind: "failed", error: "Время на подтверждение вышло", hint: "Наберите /login заново" });
+      return;
+    }
+    setLogin({ kind: "failed", error: result.error, hint: null });
+  }, [applySession]);
+
+  /**
+   * Вход через браузер.
+   *
+   * Ссылку пробуем открыть системой, но не полагаемся на это: по SSH открывать
+   * нечего, и ссылка с кодом на экране остаётся главным способом.
+   */
+  const startBrowser = useCallback(async () => {
+    setLogin({ kind: "starting" });
+
+    let pending;
+    try {
+      pending = await startBrowserLogin();
+    } catch (error) {
+      setLogin({
+        kind: "failed",
+        error:
+          error instanceof LoginNotDeployedError
+            ? "Вход по ссылке ещё не выкачен на сервер."
+            : (error as Error).message,
+        hint: "Пока работает вход почтой и паролем — выберите его в списке.",
+      });
+      return;
+    }
+
+    const qr = await renderQr(pending.url);
+    setLogin({
+      kind: "waiting",
+      url: pending.url,
+      qr,
+      code: pending.code || null,
+      secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1000)),
+    });
+    openUrl(pending.url);
+
+    const abort = new AbortController();
+    loginAbort.current = abort;
     const result = await waitForTelegramLogin(pending, {
       signal: abort.signal,
       onTick: (secondsLeft) =>
@@ -819,6 +873,7 @@ export function App({
         }
         if (key.return) {
           const method = LOGIN_METHODS[login.index];
+          if (method?.id === "browser") return void startBrowser();
           if (method?.id === "telegram") return void startTelegram();
           return setLogin({ kind: "email", email: "", password: "", field: "email", busy: false });
         }

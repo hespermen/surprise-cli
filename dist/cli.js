@@ -433,6 +433,15 @@ function formatStartTime(unixSeconds, nowMs = Date.now()) {
   const sameDay = started.day === today.day && started.month === today.month;
   return sameDay ? time : `${started.day}.${started.month} ${time}`;
 }
+function todayInMoscow(nowMs = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(nowMs));
+  return parts;
+}
 var MSK_PARTS;
 var init_format = __esm({
   "src/lib/format.ts"() {
@@ -598,6 +607,30 @@ async function startTelegramLogin() {
     expiresAt: Math.floor(Date.now() / 1e3) + (data.expires_in ?? 300)
   };
 }
+function looksNotDeployed(error) {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 503)) return true;
+  const text = error instanceof Error ? error.message : String(error);
+  return /worker boot error|appropriate entrypoint|InvalidWorkerCreation|BOOT_ERROR/i.test(text);
+}
+async function startBrowserLogin() {
+  let data;
+  try {
+    data = await callFunction("cli-login-start", {});
+  } catch (error) {
+    if (looksNotDeployed(error)) throw new LoginNotDeployedError();
+    throw error;
+  }
+  if (!data.nonce || !data.poll_secret || !data.url) {
+    throw new Error(data.error || "\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u0432\u044B\u0434\u0430\u043B \u0441\u0441\u044B\u043B\u043A\u0443 \u0434\u043B\u044F \u0432\u0445\u043E\u0434\u0430");
+  }
+  return {
+    nonce: data.nonce,
+    pollSecret: data.poll_secret,
+    url: data.url,
+    code: data.code ?? "",
+    expiresAt: Math.floor(Date.now() / 1e3) + (data.expires_in ?? 300)
+  };
+}
 async function pollTelegramLogin(pending) {
   let data;
   try {
@@ -703,7 +736,7 @@ async function logout() {
   }).catch(() => {
   });
 }
-var REFRESH_MARGIN_SEC, TelegramUnavailableError, refreshInFlight;
+var REFRESH_MARGIN_SEC, TelegramUnavailableError, LoginNotDeployedError, refreshInFlight;
 var init_auth = __esm({
   "src/net/auth.ts"() {
     "use strict";
@@ -716,6 +749,12 @@ var init_auth = __esm({
       constructor() {
         super("\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u043F\u043E \u043F\u043E\u0447\u0442\u0435: surprise login --email");
         this.name = "TelegramUnavailableError";
+      }
+    };
+    LoginNotDeployedError = class extends Error {
+      constructor() {
+        super("\u042D\u0442\u043E\u0442 \u0441\u043F\u043E\u0441\u043E\u0431 \u0432\u0445\u043E\u0434\u0430 \u0435\u0449\u0451 \u043D\u0435 \u0432\u044B\u043A\u0430\u0447\u0435\u043D \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440");
+        this.name = "LoginNotDeployedError";
       }
     };
     refreshInFlight = null;
@@ -21809,6 +21848,7 @@ async function listReleases(accessToken = null, limit = 100) {
   const params = new URLSearchParams({
     select: "id,public_id,slug,title,release_date,type,release_artists(position,artists(name))",
     is_published: "eq.true",
+    release_date: `lte.${todayInMoscow()}`,
     order: "release_date.desc.nullslast",
     limit: String(limit)
   });
@@ -21846,6 +21886,7 @@ async function showsByHost(hostId, accessToken = null, limit = 100) {
 var init_catalog = __esm({
   "src/api/catalog.ts"() {
     "use strict";
+    init_format();
     init_http();
   }
 });
@@ -22264,10 +22305,19 @@ function LoginOverlay({ phase, width: width2 }) {
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
           phase.qr ? phase.qr.split("\n").map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: line }, index)) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B \u0443\u0437\u043A\u043E\u0432\u0430\u0442 \u0434\u043B\u044F QR \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443" }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u041E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 QR \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u043E\u043C \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443:" }),
+            phase.code ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginBottom: 1, flexDirection: "column", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u041A\u043E\u0434 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \u2014 \u043E\u043D \u0436\u0435 \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C \u043D\u0430 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0435:" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: theme.accent, children: [
+                "   ",
+                phase.code.split("").join(" ")
+              ] })
+            ] }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: phase.code ? "\u041E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443 \u0438 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0432\u0445\u043E\u0434:" : "\u041E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 QR \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u043E\u043C \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443:" }),
             wrap3(phase.url, inner).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: line }, index)),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
-              "\u0417\u0430\u0442\u0435\u043C \u043D\u0430\u0436\u043C\u0438\u0442\u0435 Start \u0443 \u0431\u043E\u0442\u0430. \u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \xB7 ",
+              phase.code ? "\u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F" : "\u0417\u0430\u0442\u0435\u043C \u043D\u0430\u0436\u043C\u0438\u0442\u0435 Start \u0443 \u0431\u043E\u0442\u0430. \u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F",
+              " \xB7",
+              " ",
               phase.secondsLeft,
               " \u0441"
             ] }),
@@ -22287,7 +22337,8 @@ var init_LoginOverlay = __esm({
     init_theme();
     import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
     LOGIN_METHODS = [
-      { id: "email", label: "\u041F\u043E\u0447\u0442\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C", hint: "\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432\u0441\u0435\u0433\u0434\u0430" },
+      { id: "browser", label: "\u0421\u0441\u044B\u043B\u043A\u0430 \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435", hint: "\u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C \u043D\u0430 surprise.fm" },
+      { id: "email", label: "\u041F\u043E\u0447\u0442\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C", hint: "\u0431\u0435\u0437 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0430" },
       { id: "telegram", label: "Telegram", hint: "QR \u0438\u043B\u0438 \u0441\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0431\u043E\u0442\u0430" }
     ];
   }
@@ -23180,8 +23231,45 @@ function App2({
       kind: "waiting",
       url: pending.url,
       qr,
+      code: null,
       secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1e3))
     });
+    const abort = new AbortController();
+    loginAbort.current = abort;
+    const result = await waitForTelegramLogin(pending, {
+      signal: abort.signal,
+      onTick: (secondsLeft) => setLogin((previous) => previous?.kind === "waiting" ? { ...previous, secondsLeft } : previous)
+    });
+    loginAbort.current = null;
+    if (result.status === "ok") return applySession(result.session);
+    if (result.status === "expired") {
+      setLogin({ kind: "failed", error: "\u0412\u0440\u0435\u043C\u044F \u043D\u0430 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0432\u044B\u0448\u043B\u043E", hint: "\u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login \u0437\u0430\u043D\u043E\u0432\u043E" });
+      return;
+    }
+    setLogin({ kind: "failed", error: result.error, hint: null });
+  }, [applySession]);
+  const startBrowser = (0, import_react30.useCallback)(async () => {
+    setLogin({ kind: "starting" });
+    let pending;
+    try {
+      pending = await startBrowserLogin();
+    } catch (error) {
+      setLogin({
+        kind: "failed",
+        error: error instanceof LoginNotDeployedError ? "\u0412\u0445\u043E\u0434 \u043F\u043E \u0441\u0441\u044B\u043B\u043A\u0435 \u0435\u0449\u0451 \u043D\u0435 \u0432\u044B\u043A\u0430\u0447\u0435\u043D \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440." : error.message,
+        hint: "\u041F\u043E\u043A\u0430 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432\u0445\u043E\u0434 \u043F\u043E\u0447\u0442\u043E\u0439 \u0438 \u043F\u0430\u0440\u043E\u043B\u0435\u043C \u2014 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0435\u0433\u043E \u0432 \u0441\u043F\u0438\u0441\u043A\u0435."
+      });
+      return;
+    }
+    const qr = await renderQr(pending.url);
+    setLogin({
+      kind: "waiting",
+      url: pending.url,
+      qr,
+      code: pending.code || null,
+      secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1e3))
+    });
+    openUrl(pending.url);
     const abort = new AbortController();
     loginAbort.current = abort;
     const result = await waitForTelegramLogin(pending, {
@@ -23307,6 +23395,7 @@ function App2({
         }
         if (key.return) {
           const method = LOGIN_METHODS[login.index];
+          if (method?.id === "browser") return void startBrowser();
           if (method?.id === "telegram") return void startTelegram();
           return setLogin({ kind: "email", email: "", password: "", field: "email", busy: false });
         }

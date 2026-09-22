@@ -82,3 +82,22 @@ export function formatStartTime(unixSeconds: number | null | undefined, nowMs = 
   const sameDay = started.day === today.day && started.month === today.month;
   return sameDay ? time : `${started.day}.${started.month} ${time}`;
 }
+
+/**
+ * Сегодняшняя дата по Москве в виде YYYY-MM-DD.
+ *
+ * Считать её через `new Date().toISOString().slice(0,10)` нельзя: это UTC, и с
+ * полуночи до трёх ночи по Москве он отдаёт ВЧЕРАШНЕЕ число. Для фильтра «релиз
+ * уже вышел» это значит, что вышедшие сегодня релизы на три часа пропадают из
+ * каталога.
+ */
+export function todayInMoscow(nowMs = Date.now()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(nowMs));
+  // en-CA даёт ровно YYYY-MM-DD — тот формат, который ждёт PostgREST.
+  return parts;
+}

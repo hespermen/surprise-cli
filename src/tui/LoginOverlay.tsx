@@ -1,11 +1,13 @@
 /**
  * Вход, не выходя из интерфейса.
  *
- * Способа два, и порядок не случаен. Почта с паролем работает всегда и ни от
- * чего не зависит — поэтому она первая. Telegram удобнее, но требует, чтобы
- * сервер пускал клиента в bot-ветку, и когда не пускает, человек упирается в
- * отказ на ровном месте. Предлагать первым то, что может не сработать, — плохой
- * способ знакомства.
+ * Способа три, и порядок не случаен.
+ *
+ * Первый — ссылка в браузере: человек подтверждает вход тем аккаунтом, под
+ * которым уже сидит на surprise.fm, и ничего не вводит. Второй — почта с
+ * паролем: работает там, где браузера нет вовсе. Третий — Telegram: удобен, но
+ * требует, чтобы сервер пускал терминал в bot-ветку, и когда не пускает,
+ * человек упирается в отказ на ровном месте.
  */
 
 import { Box, Text } from "ink";
@@ -18,11 +20,12 @@ export type LoginPhase =
   | { kind: "choose"; index: number }
   | { kind: "email"; email: string; password: string; field: "email" | "password"; busy: boolean }
   | { kind: "starting" }
-  | { kind: "waiting"; url: string; qr: string | null; secondsLeft: number }
+  | { kind: "waiting"; url: string; qr: string | null; secondsLeft: number; code: string | null }
   | { kind: "failed"; error: string; hint: string | null };
 
 export const LOGIN_METHODS = [
-  { id: "email", label: "Почта и пароль", hint: "работает всегда" },
+  { id: "browser", label: "Ссылка в браузере", hint: "подтвердить на surprise.fm" },
+  { id: "email", label: "Почта и пароль", hint: "без браузера" },
   { id: "telegram", label: "Telegram", hint: "QR или ссылка на бота" },
 ] as const;
 
@@ -134,7 +137,20 @@ export function LoginOverlay({ phase, width }: { phase: LoginPhase; width: numbe
           )}
 
           <Box marginTop={1} flexDirection="column">
-            <Text color={theme.muted}>Отсканируйте QR телефоном или откройте ссылку:</Text>
+            {/* Код сверки — единственная защита от чужой ссылки: подтверждать
+                вход, не сверив его, нельзя, кто угодно мог прислать свою. */}
+            {phase.code ? (
+              <Box marginBottom={1} flexDirection="column">
+                <Text color={theme.muted}>Код подтверждения — он же должен быть на странице:</Text>
+                <Text bold color={theme.accent}>
+                  {"   "}
+                  {phase.code.split("").join(" ")}
+                </Text>
+              </Box>
+            ) : null}
+            <Text color={theme.muted}>
+              {phase.code ? "Откройте ссылку и подтвердите вход:" : "Отсканируйте QR телефоном или откройте ссылку:"}
+            </Text>
             {/* Ссылку НЕ обрезаем: обрезанную нельзя ни скопировать, ни набрать. */}
             {wrap(phase.url, inner).map((line, index) => (
               <Text key={index} color={theme.accent}>
@@ -142,7 +158,8 @@ export function LoginOverlay({ phase, width }: { phase: LoginPhase; width: numbe
               </Text>
             ))}
             <Text color={theme.muted}>
-              Затем нажмите Start у бота. Ждём подтверждения · {phase.secondsLeft} с
+              {phase.code ? "Ждём подтверждения" : "Затем нажмите Start у бота. Ждём подтверждения"} ·{" "}
+              {phase.secondsLeft} с
             </Text>
             <Text color={theme.muted}>Esc — отменить вход</Text>
           </Box>

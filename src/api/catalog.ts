@@ -6,6 +6,7 @@
  * он НЕ отсекает (архивные выпуски), фильтр ставим сами — см. showVisibility.
  */
 
+import { todayInMoscow } from "../lib/format.ts";
 import { anonHeaders, authHeaders, request, restUrl } from "../net/http.ts";
 
 function headers(accessToken: string | null): Record<string, string> {
@@ -119,10 +120,22 @@ function toRelease(row: ReleaseRow): Release {
   return { ...rest, artists };
 }
 
+/**
+ * Релизы, которые УЖЕ вышли.
+ *
+ * Раздел существует, чтобы слушать, — а невышедший релиз послушать нельзя:
+ * store-stream откажет с reason «not_released». Показывать его значит
+ * предлагать то, что не откроется.
+ *
+ * Отсекаем по дате, а не по флагу is_upcoming: в базе он стоит false у всех
+ * шести анонсированных релизов, то есть не отражает действительность. Дата
+ * отражает — и именно на неё опирается серверный гейт.
+ */
 export async function listReleases(accessToken: string | null = null, limit = 100): Promise<Release[]> {
   const params = new URLSearchParams({
     select: "id,public_id,slug,title,release_date,type,release_artists(position,artists(name))",
     is_published: "eq.true",
+    release_date: `lte.${todayInMoscow()}`,
     order: "release_date.desc.nullslast",
     limit: String(limit),
   });

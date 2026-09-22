@@ -87,6 +87,69 @@ export async function startTelegramLogin(): Promise<PendingLogin> {
   };
 }
 
+/**
+ * Вход через браузер — основной способ.
+ *
+ * Терминалу некуда принять редирект: Telegram OAuth пускает return_to только на
+ * домен, прописанный в BotFather, а localhost туда не добавить. Поэтому сессию
+ * не ловят — её ЗАБИРАЮТ: сервер заводит nonce, человек подтверждает вход на
+ * странице /cli уже вошедшим аккаунтом, а терминал опрашивает тот же
+ * telegram-login-poll и получает токены.
+ *
+ * Короткий код нужен для случая «ссылка открылась в другом браузере»: он виден
+ * и здесь, и на странице, и подтверждать вход, не сверив его, нельзя — ссылку
+ * мог прислать кто угодно.
+ */
+export interface BrowserLogin extends PendingLogin {
+  /** Код для сверки с тем, что показывает страница. */
+  code: string;
+}
+
+interface CliStartResponse {
+  nonce?: string;
+  poll_secret?: string;
+  url?: string;
+  code?: string;
+  expires_in?: number;
+  error?: string;
+}
+
+/** Похоже ли, что функции просто нет на сервере. */
+function looksNotDeployed(error: unknown): boolean {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 503)) return true;
+  const text = error instanceof Error ? error.message : String(error);
+  // Edge-рантайм на отсутствующую функцию отвечает не 404, а ошибкой загрузки
+  // воркера. Человеку это ничего не говорит, а причина ровно одна — не выкачено.
+  return /worker boot error|appropriate entrypoint|InvalidWorkerCreation|BOOT_ERROR/i.test(text);
+}
+
+export class LoginNotDeployedError extends Error {
+  constructor() {
+    super("Этот способ входа ещё не выкачен на сервер");
+    this.name = "LoginNotDeployedError";
+  }
+}
+
+export async function startBrowserLogin(): Promise<BrowserLogin> {
+  let data: CliStartResponse;
+  try {
+    data = await callFunction<CliStartResponse>("cli-login-start", {});
+  } catch (error) {
+    if (looksNotDeployed(error)) throw new LoginNotDeployedError();
+    throw error;
+  }
+  if (!data.nonce || !data.poll_secret || !data.url) {
+    throw new Error(data.error || "Сервер не выдал ссылку для входа");
+  }
+  return {
+    nonce: data.nonce,
+    pollSecret: data.poll_secret,
+    url: data.url,
+    code: data.code ?? "",
+    expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in ?? 300),
+  };
+}
+
 export type PollResult =
   | { status: "pending" }
   | { status: "ok"; session: Session; isNew: boolean }

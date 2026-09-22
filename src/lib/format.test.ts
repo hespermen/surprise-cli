@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatDuration, formatStartTime, pad, progressBar, truncate } from "./format.ts";
+import { formatDuration, formatStartTime, pad, progressBar, todayInMoscow, truncate } from "./format.ts";
 
 test("formatDuration: часы появляются только когда они есть", () => {
   assert.equal(formatDuration(0), "0:00");
@@ -84,4 +84,20 @@ test("formatStartTime: неизвестное время — прочерк", ()
   for (const value of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.equal(formatStartTime(value as number), "—");
   }
+});
+
+test("todayInMoscow: даёт московскую дату, а не UTC", () => {
+  // Регрессия на границу суток. 21.09 22:00 UTC — это уже 22.09 по Москве.
+  // Подсчёт через toISOString отдал бы 21-е, и релизы, вышедшие сегодня, на три
+  // часа исчезали бы из каталога.
+  assert.equal(todayInMoscow(Date.UTC(2026, 8, 21, 22, 0, 0)), "2026-09-22");
+  assert.equal(todayInMoscow(Date.UTC(2026, 8, 22, 12, 0, 0)), "2026-09-22");
+  assert.equal(todayInMoscow(Date.UTC(2026, 8, 22, 20, 59, 0)), "2026-09-22");
+  assert.equal(todayInMoscow(Date.UTC(2026, 8, 22, 21, 1, 0)), "2026-09-23");
+});
+
+test("todayInMoscow: формат ровно YYYY-MM-DD", () => {
+  // PostgREST сравнивает date лексикографически — любой другой формат сломает
+  // фильтр молча, отдав пустой список.
+  assert.match(todayInMoscow(), /^\d{4}-\d{2}-\d{2}$/);
 });
