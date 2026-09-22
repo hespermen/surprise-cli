@@ -36,6 +36,12 @@ await build({
       "const require = __cliCreateRequire(import.meta.url);",
     ].join("\n"),
   },
+  jsx: "automatic",
+  // react-devtools-core — необязательный импорт ink, живой только в dev-режиме.
+  // В зависимостях его нет и не надо, но без подмены esbuild отказывается
+  // собирать бандл целиком.
+  alias: { "react-devtools-core": "./scripts/devtools-stub.js" },
+  define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "info",
 });
 

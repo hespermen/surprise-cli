@@ -12,6 +12,7 @@ import { libraryCommand, playlistCommand } from "./commands/library.ts";
 import { loginCommand } from "./commands/login.ts";
 import { playCommand } from "./commands/play.ts";
 import { radioCommand } from "./commands/radio.ts";
+import { tuiCommand } from "./commands/tui.ts";
 import { logoutCommand, whoamiCommand } from "./commands/session.ts";
 import { CLIENT_VERSION } from "./config.ts";
 import { bold, cyan, dim, red } from "./ui/term.ts";
@@ -19,6 +20,7 @@ import { bold, cyan, dim, red } from "./ui/term.ts";
 const USAGE = `${bold("surprise")} — SURPRISE.FM в терминале
 
 ${bold("Команды")}
+  ${cyan("surprise")}                              полноэкранный интерфейс
   ${cyan("radio")} [--json]                          играть эфир
   ${cyan("play")} <ссылка|запрос> [--json]          играть выпуск
   ${cyan("library")} [раздел] [--json]              своя библиотека
@@ -40,10 +42,11 @@ ${dim("По SSH удобнее сканировать QR телефоном — 
 async function main(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;
 
-  if (!command || command === "--help" || command === "-h" || command === "help") {
+  if (command === "--help" || command === "-h" || command === "help") {
     process.stdout.write(USAGE);
     return 0;
   }
+  if (!command || command === "tui") return tuiCommand();
   if (command === "--version" || command === "-v") {
     process.stdout.write(`${CLIENT_VERSION}\n`);
     return 0;
