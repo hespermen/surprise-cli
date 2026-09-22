@@ -16,9 +16,16 @@ import { LANGS, setLang, type Lang } from "./i18n.ts";
 export interface Prefs {
   theme: string;
   lang: Lang;
+  /**
+   * Прошёл ли человек первичную настройку.
+   *
+   * Отдельный флаг, а не «файл настроек существует»: файл появляется и от
+   * случайной записи, а спросить язык и тему нужно ровно один раз и наверняка.
+   */
+  setupDone: boolean;
 }
 
-const DEFAULTS: Prefs = { theme: DEFAULT_THEME, lang: "ru" };
+const DEFAULTS: Prefs = { theme: DEFAULT_THEME, lang: "ru", setupDone: false };
 
 function prefsPath(): string {
   return process.env.SURPRISE_PREFS_PATH ?? join(configDir(), "prefs.json");
@@ -31,7 +38,7 @@ function sanitize(value: unknown): Prefs {
   // опечатка в нём не повод показать человеку пустой экран.
   const theme = THEMES.some((candidate) => candidate.id === raw.theme) ? raw.theme! : DEFAULTS.theme;
   const lang = LANGS.some((candidate) => candidate.id === raw.lang) ? (raw.lang as Lang) : DEFAULTS.lang;
-  return { theme, lang };
+  return { theme, lang, setupDone: raw.setupDone === true };
 }
 
 export async function loadPrefs(): Promise<Prefs> {

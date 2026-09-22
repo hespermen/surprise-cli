@@ -30,6 +30,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "login", hint: "войти через Telegram — QR прямо здесь", aliases: ["вход"] },
   { name: "logout", hint: "выйти из аккаунта", aliases: ["выход"] },
   { name: "whoami", hint: "кто вошёл" },
+  { name: "setup", hint: "заново выбрать язык и тему", aliases: ["настройка"] },
   { name: "help", hint: "справка по клавишам", aliases: ["?"] },
   { name: "quit", hint: "выход", aliases: ["q", "exit"] },
 ];

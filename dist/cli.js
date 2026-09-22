@@ -2136,16 +2136,16 @@ var require_dijkstra = __commonJS({
        */
       PriorityQueue: {
         make: function(opts) {
-          var T = dijkstra.PriorityQueue, t2 = {}, key;
+          var T = dijkstra.PriorityQueue, t3 = {}, key;
           opts = opts || {};
           for (key in T) {
             if (T.hasOwnProperty(key)) {
-              t2[key] = T[key];
+              t3[key] = T[key];
             }
           }
-          t2.queue = [];
-          t2.sorter = opts.sorter || T.default_sorter;
-          return t2;
+          t3.queue = [];
+          t3.sorter = opts.sorter || T.default_sorter;
+          return t3;
         },
         default_sorter: function(a, b) {
           return a.cost - b.cost;
@@ -5937,7 +5937,7 @@ var require_react_production_min = __commonJS({
     var p = Symbol.for("react.fragment");
     var q = Symbol.for("react.strict_mode");
     var r = Symbol.for("react.profiler");
-    var t2 = Symbol.for("react.provider");
+    var t3 = Symbol.for("react.provider");
     var u = Symbol.for("react.context");
     var v = Symbol.for("react.forward_ref");
     var w = Symbol.for("react.suspense");
@@ -6121,7 +6121,7 @@ var require_react_production_min = __commonJS({
     };
     exports.createContext = function(a) {
       a = { $$typeof: u, _currentValue: a, _currentValue2: a, _threadCount: 0, Provider: null, Consumer: null, _defaultValue: null, _globalName: null };
-      a.Provider = { $$typeof: t2, _context: a };
+      a.Provider = { $$typeof: t3, _context: a };
       return a.Consumer = a;
     };
     exports.createElement = M;
@@ -7281,14 +7281,14 @@ var init_yoga_wasm_base64_esm = __esm({
               var u = b[1].toWireType(r, this);
               p[1] = u;
             }
-            for (var t2 = 0; t2 < l; ++t2) n[t2] = b[t2 + 2].toWireType(r, arguments[t2]), p.push(n[t2]);
-            t2 = d.apply(null, p);
+            for (var t3 = 0; t3 < l; ++t3) n[t3] = b[t3 + 2].toWireType(r, arguments[t3]), p.push(n[t3]);
+            t3 = d.apply(null, p);
             if (k) Wa(r);
             else for (var y = g ? 1 : 2; y < b.length; y++) {
               var B = 1 === y ? u : n[y - 2];
               null !== b[y].V && b[y].V(B);
             }
-            u = m ? b[0].fromWireType(t2) : void 0;
+            u = m ? b[0].fromWireType(t3) : void 0;
             return u;
           };
         }
@@ -7570,10 +7570,10 @@ var init_yoga_wasm_base64_esm = __esm({
             V([a], f, (g) => {
               var k = {};
               e.forEach((m, l) => {
-                var n = g[l], p = m.ra, r = m.sa, u = g[l + e.length], t2 = m.ya, y = m.Aa;
+                var n = g[l], p = m.ra, r = m.sa, u = g[l + e.length], t3 = m.ya, y = m.Aa;
                 k[m.oa] = { read: (B) => n.fromWireType(p(r, B)), write: (B, ba) => {
                   var I = [];
-                  t2(
+                  t3(
                     y,
                     B,
                     u.toWireType(I, ba)
@@ -7629,22 +7629,22 @@ var init_yoga_wasm_base64_esm = __esm({
             bb(u, function() {
               nb("Cannot construct " + n + " due to unbound types", [d]);
             });
-            V([a, b, c], d ? [d] : [], function(t2) {
-              t2 = t2[0];
+            V([a, b, c], d ? [d] : [], function(t3) {
+              t3 = t3[0];
               if (d) {
-                var y = t2.N;
+                var y = t3.N;
                 var B = y.X;
               } else B = X.prototype;
-              t2 = Ba(u, function() {
+              t3 = Ba(u, function() {
                 if (Object.getPrototypeOf(this) !== ba) throw new K("Use 'new' to construct " + n);
                 if (void 0 === I.Y) throw new K(n + " has no accessible constructor");
                 var kb = I.Y[arguments.length];
                 if (void 0 === kb) throw new K("Tried to invoke ctor of " + n + " with invalid number of parameters (" + arguments.length + ") - expected (" + Object.keys(I.Y).toString() + ") parameters instead!");
                 return kb.apply(this, arguments);
               });
-              var ba = Object.create(B, { constructor: { value: t2 } });
-              t2.prototype = ba;
-              var I = new cb(n, t2, ba, r, y, f, k, l);
+              var ba = Object.create(B, { constructor: { value: t3 } });
+              t3.prototype = ba;
+              var I = new cb(n, t3, ba, r, y, f, k, l);
               y = new Y(n, I, true, false);
               B = new Y(n + "*", I, false, false);
               var lb = new Y(n + " const*", I, false, true);
@@ -7652,7 +7652,7 @@ var init_yoga_wasm_base64_esm = __esm({
                 pointerType: B,
                 la: lb
               };
-              ib(u, t2);
+              ib(u, t3);
               return [y, B, lb];
             });
           },
@@ -7714,9 +7714,9 @@ var init_yoga_wasm_base64_esm = __esm({
               k && l.N.ja.push(b);
               var r = l.N.X, u = r[b];
               void 0 === u || void 0 === u.S && u.className !== l.name && u.Z === c - 2 ? (n.Z = c - 2, n.className = l.name, r[b] = n) : (ab(r, b, p), r[b].S[c - 2] = n);
-              V([], m, function(t2) {
-                t2 = ob(p, t2, l, f, g);
-                void 0 === r[b].S ? (t2.Z = c - 2, r[b] = t2) : r[b].S[c - 2] = t2;
+              V([], m, function(t3) {
+                t3 = ob(p, t3, l, f, g);
+                void 0 === r[b].S ? (t3.Z = c - 2, r[b] = t3) : r[b].S[c - 2] = t3;
                 return [];
               });
               return [];
@@ -7857,8 +7857,8 @@ var init_yoga_wasm_base64_esm = __esm({
             } else 4 === b && (d = wb, e = xb, f = yb, g = () => E, k = 2);
             W(a, { name: c, fromWireType: function(m) {
               for (var l = E[m >> 2], n = g(), p, r = m + 4, u = 0; u <= l; ++u) {
-                var t2 = m + 4 + u * b;
-                if (u == l || 0 == n[t2 >> k]) r = d(r, t2 - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t2 + b;
+                var t3 = m + 4 + u * b;
+                if (u == l || 0 == n[t3 >> k]) r = d(r, t3 - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t3 + b;
               }
               S(m);
               return p;
@@ -8375,7 +8375,7 @@ function wrapAssembly(lib) {
     lib.Node.destroy(this);
   });
   patch(lib.Node.prototype, "freeRecursive", function() {
-    for (let t2 = 0, T = this.getChildCount(); t2 < T; ++t2) {
+    for (let t3 = 0, T = this.getChildCount(); t3 < T; ++t3) {
       this.getChild(0).freeRecursive();
     }
     this.free();
@@ -8460,7 +8460,7 @@ var require_scheduler_production_min = __commonJS({
     var p;
     var q;
     var r = [];
-    var t2 = [];
+    var t3 = [];
     var u = 1;
     var v = null;
     var y = 3;
@@ -8472,11 +8472,11 @@ var require_scheduler_production_min = __commonJS({
     var F = "undefined" !== typeof setImmediate ? setImmediate : null;
     "undefined" !== typeof navigator && void 0 !== navigator.scheduling && void 0 !== navigator.scheduling.isInputPending && navigator.scheduling.isInputPending.bind(navigator.scheduling);
     function G(a) {
-      for (var b = h(t2); null !== b; ) {
-        if (null === b.callback) k(t2);
-        else if (b.startTime <= a) k(t2), b.sortIndex = b.expirationTime, f(r, b);
+      for (var b = h(t3); null !== b; ) {
+        if (null === b.callback) k(t3);
+        else if (b.startTime <= a) k(t3), b.sortIndex = b.expirationTime, f(r, b);
         else break;
-        b = h(t2);
+        b = h(t3);
       }
     }
     function H(a) {
@@ -8484,7 +8484,7 @@ var require_scheduler_production_min = __commonJS({
       G(a);
       if (!A) if (null !== h(r)) A = true, I(J);
       else {
-        var b = h(t2);
+        var b = h(t3);
         null !== b && K(H, b.startTime - a);
       }
     }
@@ -8509,7 +8509,7 @@ var require_scheduler_production_min = __commonJS({
         }
         if (null !== v) var w = true;
         else {
-          var m = h(t2);
+          var m = h(t3);
           null !== m && K(H, m.startTime - b);
           w = false;
         }
@@ -8645,7 +8645,7 @@ var require_scheduler_production_min = __commonJS({
       }
       e = c + e;
       a = { id: u++, callback: b, priorityLevel: a, startTime: c, expirationTime: e, sortIndex: -1 };
-      c > d ? (a.sortIndex = c, f(t2, a), null === h(r) && a === h(t2) && (B ? (E(L), L = -1) : B = true, K(H, c - d))) : (a.sortIndex = e, f(r, a), A || z || (A = true, I(J)));
+      c > d ? (a.sortIndex = c, f(t3, a), null === h(r) && a === h(t3) && (B ? (E(L), L = -1) : B = true, K(H, c - d))) : (a.sortIndex = e, f(r, a), A || z || (A = true, I(J)));
       return a;
     };
     exports.unstable_shouldYield = M;
@@ -9536,30 +9536,30 @@ var require_react_reconciler_production_min = __commonJS({
           return null;
         }
         function w(e2, g2, h2, k2) {
-          for (var l2 = null, m2 = null, u = g2, t2 = g2 = 0, E = null; null !== u && t2 < h2.length; t2++) {
-            u.index > t2 ? (E = u, u = null) : E = u.sibling;
-            var y = p(e2, u, h2[t2], k2);
+          for (var l2 = null, m2 = null, u = g2, t3 = g2 = 0, E = null; null !== u && t3 < h2.length; t3++) {
+            u.index > t3 ? (E = u, u = null) : E = u.sibling;
+            var y = p(e2, u, h2[t3], k2);
             if (null === y) {
               null === u && (u = E);
               break;
             }
             a && u && null === y.alternate && b(e2, u);
-            g2 = f(y, g2, t2);
+            g2 = f(y, g2, t3);
             null === m2 ? l2 = y : m2.sibling = y;
             m2 = y;
             u = E;
           }
-          if (t2 === h2.length) return c(e2, u), F && kd(e2, t2), l2;
+          if (t3 === h2.length) return c(e2, u), F && kd(e2, t3), l2;
           if (null === u) {
-            for (; t2 < h2.length; t2++) u = r(e2, h2[t2], k2), null !== u && (g2 = f(u, g2, t2), null === m2 ? l2 = u : m2.sibling = u, m2 = u);
-            F && kd(e2, t2);
+            for (; t3 < h2.length; t3++) u = r(e2, h2[t3], k2), null !== u && (g2 = f(u, g2, t3), null === m2 ? l2 = u : m2.sibling = u, m2 = u);
+            F && kd(e2, t3);
             return l2;
           }
-          for (u = d(e2, u); t2 < h2.length; t2++) E = B(u, e2, t2, h2[t2], k2), null !== E && (a && null !== E.alternate && u.delete(null === E.key ? t2 : E.key), g2 = f(E, g2, t2), null === m2 ? l2 = E : m2.sibling = E, m2 = E);
+          for (u = d(e2, u); t3 < h2.length; t3++) E = B(u, e2, t3, h2[t3], k2), null !== E && (a && null !== E.alternate && u.delete(null === E.key ? t3 : E.key), g2 = f(E, g2, t3), null === m2 ? l2 = E : m2.sibling = E, m2 = E);
           a && u.forEach(function(a2) {
             return b(e2, a2);
           });
-          F && kd(e2, t2);
+          F && kd(e2, t3);
           return l2;
         }
         function Y(e2, g2, h2, k2) {
@@ -9567,15 +9567,15 @@ var require_react_reconciler_production_min = __commonJS({
           if ("function" !== typeof l2) throw Error(n(150));
           h2 = l2.call(h2);
           if (null == h2) throw Error(n(151));
-          for (var u = l2 = null, m2 = g2, t2 = g2 = 0, E = null, y = h2.next(); null !== m2 && !y.done; t2++, y = h2.next()) {
-            m2.index > t2 ? (E = m2, m2 = null) : E = m2.sibling;
+          for (var u = l2 = null, m2 = g2, t3 = g2 = 0, E = null, y = h2.next(); null !== m2 && !y.done; t3++, y = h2.next()) {
+            m2.index > t3 ? (E = m2, m2 = null) : E = m2.sibling;
             var w2 = p(e2, m2, y.value, k2);
             if (null === w2) {
               null === m2 && (m2 = E);
               break;
             }
             a && m2 && null === w2.alternate && b(e2, m2);
-            g2 = f(w2, g2, t2);
+            g2 = f(w2, g2, t3);
             null === u ? l2 = w2 : u.sibling = w2;
             u = w2;
             m2 = E;
@@ -9583,17 +9583,17 @@ var require_react_reconciler_production_min = __commonJS({
           if (y.done) return c(
             e2,
             m2
-          ), F && kd(e2, t2), l2;
+          ), F && kd(e2, t3), l2;
           if (null === m2) {
-            for (; !y.done; t2++, y = h2.next()) y = r(e2, y.value, k2), null !== y && (g2 = f(y, g2, t2), null === u ? l2 = y : u.sibling = y, u = y);
-            F && kd(e2, t2);
+            for (; !y.done; t3++, y = h2.next()) y = r(e2, y.value, k2), null !== y && (g2 = f(y, g2, t3), null === u ? l2 = y : u.sibling = y, u = y);
+            F && kd(e2, t3);
             return l2;
           }
-          for (m2 = d(e2, m2); !y.done; t2++, y = h2.next()) y = B(m2, e2, t2, y.value, k2), null !== y && (a && null !== y.alternate && m2.delete(null === y.key ? t2 : y.key), g2 = f(y, g2, t2), null === u ? l2 = y : u.sibling = y, u = y);
+          for (m2 = d(e2, m2); !y.done; t3++, y = h2.next()) y = B(m2, e2, t3, y.value, k2), null !== y && (a && null !== y.alternate && m2.delete(null === y.key ? t3 : y.key), g2 = f(y, g2, t3), null === u ? l2 = y : u.sibling = y, u = y);
           a && m2.forEach(function(a2) {
             return b(e2, a2);
           });
-          F && kd(e2, t2);
+          F && kd(e2, t3);
           return l2;
         }
         function ya(a2, d2, f2, h2) {
@@ -12427,8 +12427,8 @@ var require_react_reconciler_production_min = __commonJS({
                     break a;
                   case 1:
                     h = k;
-                    var u = f.type, t2 = f.stateNode;
-                    if (0 === (f.flags & 128) && ("function" === typeof u.getDerivedStateFromError || null !== t2 && "function" === typeof t2.componentDidCatch && (null === Mf || !Mf.has(t2)))) {
+                    var u = f.type, t3 = f.stateNode;
+                    if (0 === (f.flags & 128) && ("function" === typeof u.getDerivedStateFromError || null !== t3 && "function" === typeof t3.componentDidCatch && (null === Mf || !Mf.has(t3)))) {
                       f.flags |= 65536;
                       b &= -b;
                       f.lanes |= b;
@@ -12669,8 +12669,8 @@ var require_react_reconciler_production_min = __commonJS({
               var u = a.current;
               for (T = u; null !== T; ) {
                 g = T;
-                var t2 = g.child;
-                if (0 !== (g.subtreeFlags & 2064) && null !== t2) t2.return = g, T = t2;
+                var t3 = g.child;
+                if (0 !== (g.subtreeFlags & 2064) && null !== t3) t3.return = g, T = t3;
                 else b: for (g = u; null !== T; ) {
                   h = T;
                   if (0 !== (h.flags & 2048)) try {
@@ -22185,6 +22185,7 @@ var init_commands = __esm({
       { name: "login", hint: "\u0432\u043E\u0439\u0442\u0438 \u0447\u0435\u0440\u0435\u0437 Telegram \u2014 QR \u043F\u0440\u044F\u043C\u043E \u0437\u0434\u0435\u0441\u044C", aliases: ["\u0432\u0445\u043E\u0434"] },
       { name: "logout", hint: "\u0432\u044B\u0439\u0442\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430", aliases: ["\u0432\u044B\u0445\u043E\u0434"] },
       { name: "whoami", hint: "\u043A\u0442\u043E \u0432\u043E\u0448\u0451\u043B" },
+      { name: "setup", hint: "\u0437\u0430\u043D\u043E\u0432\u043E \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u044F\u0437\u044B\u043A \u0438 \u0442\u0435\u043C\u0443", aliases: ["\u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430"] },
       { name: "help", hint: "\u0441\u043F\u0440\u0430\u0432\u043A\u0430 \u043F\u043E \u043A\u043B\u0430\u0432\u0438\u0448\u0430\u043C", aliases: ["?"] },
       { name: "quit", hint: "\u0432\u044B\u0445\u043E\u0434", aliases: ["q", "exit"] }
     ];
@@ -23021,7 +23022,7 @@ function sanitize(value) {
   const raw = value;
   const theme2 = THEMES.some((candidate) => candidate.id === raw.theme) ? raw.theme : DEFAULTS.theme;
   const lang = LANGS.some((candidate) => candidate.id === raw.lang) ? raw.lang : DEFAULTS.lang;
-  return { theme: theme2, lang };
+  return { theme: theme2, lang, setupDone: raw.setupDone === true };
 }
 async function loadPrefs() {
   try {
@@ -23053,7 +23054,102 @@ var init_prefs = __esm({
     init_session();
     init_theme();
     init_i18n();
-    DEFAULTS = { theme: DEFAULT_THEME, lang: "ru" };
+    DEFAULTS = { theme: DEFAULT_THEME, lang: "ru", setupDone: false };
+  }
+});
+
+// src/tui/Setup.tsx
+function optionsFor(step, lang) {
+  const copy = COPY[lang];
+  switch (step) {
+    case "lang":
+      return LANGS.map((item) => ({ label: item.label }));
+    case "theme":
+      return THEMES.map((item) => ({ label: item.label }));
+    case "login":
+      return [{ label: copy.loginYes }, { label: copy.loginLater }];
+  }
+}
+function Setup({ step, index, lang, selected, width: width2 }) {
+  const copy = COPY[lang];
+  const inner = Math.max(30, width2 - 6);
+  const options = optionsFor(step, lang);
+  const title = step === "lang" ? copy.langTitle : step === "theme" ? copy.themeTitle : copy.loginTitle;
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      borderStyle: "round",
+      borderColor: theme.accent,
+      paddingX: 3,
+      paddingY: 1,
+      width: width2,
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { bold: true, color: theme.accent, children: [
+          "SURPRISE.FM \xB7 ",
+          copy.welcome
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Text, { color: theme.muted, children: [
+          copy.step,
+          " ",
+          index + 1,
+          "/",
+          SETUP_STEPS.length
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { bold: true, children: fit(title, inner) }) }),
+        step === "login" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: theme.muted, children: fit(copy.loginWhy, inner) }) }) : null,
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: options.map((option, optionIndex) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          Text,
+          {
+            color: optionIndex === selected ? theme.accent : void 0,
+            bold: optionIndex === selected,
+            children: [
+              optionIndex === selected ? "\u25B8 " : "  ",
+              option.label
+            ]
+          },
+          option.label
+        )) }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: theme.muted, children: copy.nav }) })
+      ]
+    }
+  );
+}
+var import_react28, import_jsx_runtime7, COPY, SETUP_STEPS;
+var init_Setup = __esm({
+  async "src/tui/Setup.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react28 = __toESM(require_react(), 1);
+    init_i18n();
+    init_theme();
+    init_theme();
+    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+    COPY = {
+      ru: {
+        welcome: "\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C",
+        langTitle: "\u042F\u0437\u044B\u043A \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430",
+        themeTitle: "\u0422\u0435\u043C\u0430 \u043E\u0444\u043E\u0440\u043C\u043B\u0435\u043D\u0438\u044F",
+        loginTitle: "\u0412\u043E\u0439\u0442\u0438 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442?",
+        loginWhy: "\u0412\u0445\u043E\u0434 \u043E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u0442 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B, \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u0438 \u043D\u0430\u0445\u043E\u0434\u043A\u0438. \u042D\u0444\u0438\u0440 \u0438\u0433\u0440\u0430\u0435\u0442 \u0438 \u0431\u0435\u0437 \u043D\u0435\u0433\u043E.",
+        loginYes: "\u0412\u043E\u0439\u0442\u0438 \u0441\u0435\u0439\u0447\u0430\u0441",
+        loginLater: "\u041F\u043E\u0437\u0436\u0435",
+        nav: "\u2191/\u2193 \u2014 \u0432\u044B\u0431\u0440\u0430\u0442\u044C \xB7 Enter \u2014 \u0434\u0430\u043B\u044C\u0448\u0435",
+        step: "\u0448\u0430\u0433"
+      },
+      en: {
+        welcome: "Welcome",
+        langTitle: "Interface language",
+        themeTitle: "Colour theme",
+        loginTitle: "Sign in?",
+        loginWhy: "Signing in unlocks playlists, favourites and finds. The live stream works without it.",
+        loginYes: "Sign in now",
+        loginLater: "Later",
+        nav: "\u2191/\u2193 to choose \xB7 Enter to continue",
+        step: "step"
+      }
+    };
+    SETUP_STEPS = ["lang", "theme", "login"];
   }
 });
 
@@ -23113,24 +23209,24 @@ function buildRows() {
 function Logo({ frame, width: width2 }) {
   if (width2 < LOGO_WIDTH + 2) return null;
   if (!colorEnabled()) {
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { bold: true, children: row }, index)) });
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, children: row }, index)) });
   }
   const beam = beamPosition(frame, LOGO_WIDTH, BEAM_HALF);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { children: [...row].map((char, columnIndex) => {
-    if (char === " ") return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { children: " " }, columnIndex);
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { children: [...row].map((char, columnIndex) => {
+    if (char === " ") return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: " " }, columnIndex);
     const intensity = beam === null ? 0 : beamIntensity(columnIndex + rowIndex * 2, beam, BEAM_HALF);
-    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { bold: true, color: mixHex(BASE, GLOW, intensity), children: char }, columnIndex);
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: mixHex(BASE, GLOW, intensity), children: char }, columnIndex);
   }) }, rowIndex)) });
 }
-var import_react28, import_jsx_runtime7, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH, BASE, GLOW, BEAM_HALF;
+var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH, BASE, GLOW, BEAM_HALF;
 var init_Logo = __esm({
   async "src/tui/Logo.tsx"() {
     "use strict";
     await init_build2();
-    import_react28 = __toESM(require_react(), 1);
+    import_react29 = __toESM(require_react(), 1);
     init_term();
     init_shimmer();
-    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
     GLYPHS = {
       S: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "  \u2588", "\u2588\u2588\u2588"],
       U: ["\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588\u2588\u2588"],
@@ -23241,12 +23337,12 @@ function MeterRow({
     if (index < lit) return { glyph: "\u2588", color: zoneColor(cellDb), dim: false };
     return { glyph: "\u25AA", color: theme.muted, dim: true };
   });
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Text, { color: theme.muted, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: theme.muted, children: [
       label,
       " "
     ] }),
-    cells.map((cell, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: cell.color, bold: !cell.dim, children: cell.glyph }, index))
+    cells.map((cell, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: cell.color, bold: !cell.dim, children: cell.glyph }, index))
   ] });
 }
 function LevelMeter({
@@ -23256,8 +23352,8 @@ function LevelMeter({
 }) {
   const segments = Math.max(0, Math.min(64, width2 - 8));
   if (segments < 12 || channelsDb.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-    channelsDb.map((db, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    channelsDb.map((db, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       MeterRow,
       {
         label: channelLabel(index, channelsDb.length),
@@ -23267,22 +23363,22 @@ function LevelMeter({
       },
       index
     )),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: theme.muted, children: "  " }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: theme.muted, children: scaleRow(segments) }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: theme.muted, children: " dB" })
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: theme.muted, children: "  " }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: theme.muted, children: scaleRow(segments) }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: theme.muted, children: " dB" })
     ] })
   ] });
 }
-var import_react29, import_jsx_runtime8;
+var import_react30, import_jsx_runtime9;
 var init_LevelMeter = __esm({
   async "src/tui/LevelMeter.tsx"() {
     "use strict";
     await init_build2();
-    import_react29 = __toESM(require_react(), 1);
+    import_react30 = __toESM(require_react(), 1);
     init_meter();
     init_theme();
-    import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -23340,7 +23436,7 @@ function Sidebar({
   let lastGroup;
   const from = Math.min(Math.max(0, selectedIndex - Math.floor(height / 2)), Math.max(0, sections.length - height));
   const visible = sections.slice(from, from + height);
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -23349,7 +23445,7 @@ function Sidebar({
       paddingX: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
         visible.map((section, offset) => {
           const index = from + offset;
           const isActive = section.id === activeId;
@@ -23357,9 +23453,9 @@ function Sidebar({
           const locked = section.needsAuth && !hasAuth;
           const groupChanged = section.group !== void 0 && section.group !== lastGroup;
           lastGroup = section.group;
-          return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_react30.default.Fragment, { children: [
-            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
+          return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_react31.default.Fragment, { children: [
+            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
               Text,
               {
                 color: locked ? theme.muted : isActive ? theme.accent : void 0,
@@ -23377,22 +23473,22 @@ function Sidebar({
     }
   );
 }
-var import_react30, import_jsx_runtime9;
+var import_react31, import_jsx_runtime10;
 var init_Sidebar = __esm({
   async "src/tui/Sidebar.tsx"() {
     "use strict";
     await init_build2();
-    import_react30 = __toESM(require_react(), 1);
+    import_react31 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/usePlayer.ts
 function usePlayer(backend) {
-  const [status, setStatus] = (0, import_react31.useState)(backend?.status() ?? IDLE);
-  const pending = (0, import_react31.useRef)(null);
-  (0, import_react31.useEffect)(() => {
+  const [status, setStatus] = (0, import_react32.useState)(backend?.status() ?? IDLE);
+  const pending = (0, import_react32.useRef)(null);
+  (0, import_react32.useEffect)(() => {
     if (!backend) return;
     const flush = setInterval(() => {
       if (!pending.current) return;
@@ -23414,11 +23510,11 @@ function usePlayer(backend) {
   }, [backend]);
   return status;
 }
-var import_react31, IDLE, THROTTLE_MS;
+var import_react32, IDLE, THROTTLE_MS;
 var init_usePlayer = __esm({
   "src/tui/usePlayer.ts"() {
     "use strict";
-    import_react31 = __toESM(require_react(), 1);
+    import_react32 = __toESM(require_react(), 1);
     IDLE = { positionSec: null, durationSec: null, paused: false, idle: true };
     THROTTLE_MS = 250;
   }
@@ -23436,42 +23532,44 @@ function App2({
   userId: initialUserId,
   onExit
 }) {
-  const [accessToken, setAccessToken] = (0, import_react32.useState)(initialToken);
-  const [userId, setUserId] = (0, import_react32.useState)(initialUserId);
-  const [login, setLogin] = (0, import_react32.useState)(null);
+  const [accessToken, setAccessToken] = (0, import_react33.useState)(initialToken);
+  const [userId, setUserId] = (0, import_react33.useState)(initialUserId);
+  const [login, setLogin] = (0, import_react33.useState)(null);
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const status = usePlayer(backend);
   const width2 = clampSize(stdout?.columns, 100, 40);
   const height = clampSize(stdout?.rows, 30, 12);
-  const [focus, setFocus] = (0, import_react32.useState)("list");
-  const [sectionIndex, setSectionIndex] = (0, import_react32.useState)(0);
-  const [activeSection, setActiveSection] = (0, import_react32.useState)("radio");
-  const [rowsBySection, setRows] = (0, import_react32.useState)({});
-  const [selectedBySection, setSelected] = (0, import_react32.useState)({});
-  const [loading, setLoading] = (0, import_react32.useState)(null);
-  const [message, setMessage] = (0, import_react32.useState)(null);
-  const [drill, setDrill] = (0, import_react32.useState)(null);
-  const [now, setNow] = (0, import_react32.useState)(null);
-  const [volume, setVolume] = (0, import_react32.useState)(100);
-  const [mutedFrom, setMutedFrom] = (0, import_react32.useState)(100);
-  const [showHelp, setShowHelp] = (0, import_react32.useState)(false);
-  const [radioNow, setRadioNow] = (0, import_react32.useState)(null);
-  const [streamUrl, setStreamUrl] = (0, import_react32.useState)(null);
-  const [tracklist, setTracklist] = (0, import_react32.useState)([]);
-  const [detailShow, setDetailShow] = (0, import_react32.useState)(null);
-  const [query, setQuery] = (0, import_react32.useState)("");
-  const [typing, setTyping] = (0, import_react32.useState)(false);
-  const [prefs, setPrefs] = (0, import_react32.useState)({ theme: THEMES[0].id, lang: getLang() });
-  const [channels, setChannels] = (0, import_react32.useState)([]);
-  const [peaks, setPeaks] = (0, import_react32.useState)([]);
-  const [frame, setFrame] = (0, import_react32.useState)(0);
-  const [commandOpen, setCommandOpen] = (0, import_react32.useState)(false);
-  const [commandInput, setCommandInput] = (0, import_react32.useState)("");
-  const [commandHighlight, setCommandHighlight] = (0, import_react32.useState)(0);
-  const [commandError, setCommandError] = (0, import_react32.useState)(null);
+  const [focus, setFocus] = (0, import_react33.useState)("list");
+  const [sectionIndex, setSectionIndex] = (0, import_react33.useState)(0);
+  const [activeSection, setActiveSection] = (0, import_react33.useState)("radio");
+  const [rowsBySection, setRows] = (0, import_react33.useState)({});
+  const [selectedBySection, setSelected] = (0, import_react33.useState)({});
+  const [loading, setLoading] = (0, import_react33.useState)(null);
+  const [message, setMessage] = (0, import_react33.useState)(null);
+  const [drill, setDrill] = (0, import_react33.useState)(null);
+  const [now, setNow] = (0, import_react33.useState)(null);
+  const [volume, setVolume] = (0, import_react33.useState)(100);
+  const [mutedFrom, setMutedFrom] = (0, import_react33.useState)(100);
+  const [showHelp, setShowHelp] = (0, import_react33.useState)(false);
+  const [radioNow, setRadioNow] = (0, import_react33.useState)(null);
+  const [streamUrl, setStreamUrl] = (0, import_react33.useState)(null);
+  const [tracklist, setTracklist] = (0, import_react33.useState)([]);
+  const [detailShow, setDetailShow] = (0, import_react33.useState)(null);
+  const [query, setQuery] = (0, import_react33.useState)("");
+  const [typing, setTyping] = (0, import_react33.useState)(false);
+  const [prefs, setPrefs] = (0, import_react33.useState)({ theme: THEMES[0].id, lang: getLang(), setupDone: true });
+  const [setupStep, setSetupStep] = (0, import_react33.useState)(null);
+  const [setupChoice, setSetupChoice] = (0, import_react33.useState)(0);
+  const [channels, setChannels] = (0, import_react33.useState)([]);
+  const [peaks, setPeaks] = (0, import_react33.useState)([]);
+  const [frame, setFrame] = (0, import_react33.useState)(0);
+  const [commandOpen, setCommandOpen] = (0, import_react33.useState)(false);
+  const [commandInput, setCommandInput] = (0, import_react33.useState)("");
+  const [commandHighlight, setCommandHighlight] = (0, import_react33.useState)(0);
+  const [commandError, setCommandError] = (0, import_react33.useState)(null);
   const section = sectionById(activeSection);
-  const settingRows = (0, import_react32.useMemo)(
+  const settingRows = (0, import_react33.useMemo)(
     () => [
       {
         key: "theme",
@@ -23489,12 +23587,12 @@ function App2({
   const sectionRows = activeSection === "settings" ? settingRows : rowsBySection[activeSection] ?? [];
   const rows = drill ? drill.rows : sectionRows;
   const selected = drill ? drill.selected : Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, sectionRows.length - 1));
-  const say = (0, import_react32.useCallback)((text) => setMessage(text), []);
-  const setSelectedFor = (0, import_react32.useCallback)(
+  const say = (0, import_react33.useCallback)((text) => setMessage(text), []);
+  const setSelectedFor = (0, import_react33.useCallback)(
     (id, value) => setSelected((previous) => ({ ...previous, [id]: value })),
     []
   );
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
     const spec = sectionById(activeSection);
     if (spec.needsAuth && !accessToken) return;
@@ -23511,18 +23609,19 @@ function App2({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const timer = setInterval(() => setFrame((value) => (value + 1) % 1e5), 200);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     void loadPrefs().then((loaded) => {
       applyPalette(loaded.theme);
       setLang(loaded.lang);
       setPrefs(loaded);
+      if (!loaded.setupDone) setSetupStep("lang");
     });
   }, []);
-  const playRadio = (0, import_react32.useCallback)(async () => {
+  const playRadio = (0, import_react33.useCallback)(async () => {
     const url = streamUrl;
     if (!url) return;
     try {
@@ -23541,7 +23640,7 @@ function App2({
       say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
     }
   }, [backend, streamUrl, say]);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     void (async () => {
       const settings = await fetchStationSettings();
       const url = await resolveLiveStream(settings);
@@ -23562,7 +23661,7 @@ function App2({
       }
     })();
   }, []);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const refresh = async () => {
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
@@ -23580,7 +23679,7 @@ function App2({
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
     let channelId = null;
@@ -23598,7 +23697,7 @@ function App2({
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     if (activeSection !== "search") return;
     if (query.trim().length < 2) {
       setRows((previous) => ({ ...previous, search: [] }));
@@ -23610,7 +23709,7 @@ function App2({
     return () => clearTimeout(timer);
   }, [query, activeSection, accessToken]);
   const selectedRow = rows[selected];
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const show = asShow(activeSection, drill, selectedRow);
     if (!show) {
       setDetailShow(null);
@@ -23626,7 +23725,7 @@ function App2({
       cancelled = true;
     };
   }, [activeSection, drill, selectedRow, accessToken]);
-  const playShow = (0, import_react32.useCallback)(
+  const playShow = (0, import_react33.useCallback)(
     async (show) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${show.title ?? "\u0432\u044B\u043F\u0443\u0441\u043A"}\xBB\u2026`);
       const stream = await fetchShowStream(show.id, accessToken).catch(() => null);
@@ -23653,7 +23752,7 @@ function App2({
     },
     [backend, accessToken, say]
   );
-  const playById = (0, import_react32.useCallback)(
+  const playById = (0, import_react33.useCallback)(
     async (showId) => {
       const show = await findShowById(showId, accessToken).catch(() => null);
       if (!show) {
@@ -23665,7 +23764,7 @@ function App2({
     },
     [accessToken, playShow, say]
   );
-  const playStoreTrack = (0, import_react32.useCallback)(
+  const playStoreTrack = (0, import_react33.useCallback)(
     async (track) => {
       if (!accessToken) {
         say("\u0422\u0440\u0435\u043A\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
@@ -23698,18 +23797,18 @@ function App2({
     },
     [accessToken, backend, say]
   );
-  const previewArmed = import_react32.default.useRef(false);
-  (0, import_react32.useEffect)(() => {
+  const previewArmed = import_react33.default.useRef(false);
+  (0, import_react33.useEffect)(() => {
     previewArmed.current = false;
   }, [now]);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     const { stop, armed } = previewCutoff(status.positionSec, now?.previewEndSec ?? null, previewArmed.current);
     previewArmed.current = armed;
     if (!stop) return;
     void backend.setPaused(true);
     say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
   }, [now, status.positionSec, backend, say]);
-  (0, import_react32.useEffect)(() => {
+  (0, import_react33.useEffect)(() => {
     if (!backend.levels) return;
     const timer = setInterval(() => {
       if (status.paused || status.idle) {
@@ -23727,7 +23826,7 @@ function App2({
     }, 120);
     return () => clearInterval(timer);
   }, [backend, status.paused, status.idle]);
-  const openDrill = (0, import_react32.useCallback)(
+  const openDrill = (0, import_react33.useCallback)(
     async (title, load) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${title}\xBB\u2026`);
       const loaded = await load().catch(() => []);
@@ -23741,7 +23840,7 @@ function App2({
     },
     [say]
   );
-  const activate = (0, import_react32.useCallback)(async () => {
+  const activate = (0, import_react33.useCallback)(async () => {
     if (drill) {
       const row2 = drill.rows[drill.selected];
       if (!row2) return;
@@ -23866,7 +23965,7 @@ function App2({
     openDrill,
     say
   ]);
-  const toggleFavourite = (0, import_react32.useCallback)(async () => {
+  const toggleFavourite = (0, import_react33.useCallback)(async () => {
     if (!accessToken) return say(t("like.needAuth"));
     const row = rows[selected];
     const target = likeTargetOf(activeSection, drill, row);
@@ -23885,7 +23984,7 @@ function App2({
       say(`\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
     }
   }, [accessToken, userId, rows, selected, activeSection, drill, say]);
-  const moveSelection = (0, import_react32.useCallback)(
+  const moveSelection = (0, import_react33.useCallback)(
     (delta) => {
       if (focus === "sidebar") {
         setSectionIndex((previous) => Math.min(SECTIONS2.length - 1, Math.max(0, previous + delta)));
@@ -23901,7 +24000,7 @@ function App2({
     },
     [focus, drill, activeSection, sectionRows.length, selected, setSelectedFor]
   );
-  const openSection = (0, import_react32.useCallback)((index) => {
+  const openSection = (0, import_react33.useCallback)((index) => {
     const target = SECTIONS2[index];
     if (!target) return;
     setSectionIndex(index);
@@ -23910,15 +24009,15 @@ function App2({
     setFocus("list");
     setTyping(target.id === "search");
   }, []);
-  const gotoSection = (0, import_react32.useCallback)(
+  const gotoSection = (0, import_react33.useCallback)(
     (id) => {
       const index = SECTIONS2.findIndex((candidate) => candidate.id === id);
       if (index >= 0) openSection(index);
     },
     [openSection]
   );
-  const loginAbort = import_react32.default.useRef(null);
-  const applySession = (0, import_react32.useCallback)(
+  const loginAbort = import_react33.default.useRef(null);
+  const applySession = (0, import_react33.useCallback)(
     (session) => {
       setAccessToken(session.access_token);
       setUserId(session.user_id);
@@ -23931,7 +24030,7 @@ function App2({
     },
     [say]
   );
-  const submitEmailLogin = (0, import_react32.useCallback)(
+  const submitEmailLogin = (0, import_react33.useCallback)(
     async (email, password) => {
       setLogin({ kind: "email", email, password, field: "password", busy: true });
       try {
@@ -23947,7 +24046,7 @@ function App2({
     },
     [applySession]
   );
-  const startTelegram = (0, import_react32.useCallback)(async () => {
+  const startTelegram = (0, import_react33.useCallback)(async () => {
     setLogin({ kind: "starting" });
     let pending;
     try {
@@ -23982,7 +24081,7 @@ function App2({
     }
     setLogin({ kind: "failed", error: result.error, hint: null });
   }, [applySession]);
-  const startBrowser = (0, import_react32.useCallback)(async () => {
+  const startBrowser = (0, import_react33.useCallback)(async () => {
     setLogin({ kind: "starting" });
     let pending;
     try {
@@ -24018,11 +24117,11 @@ function App2({
     }
     setLogin({ kind: "failed", error: result.error, hint: null });
   }, [applySession]);
-  const startLogin = (0, import_react32.useCallback)(() => {
+  const startLogin = (0, import_react33.useCallback)(() => {
     setCommandOpen(false);
     setLogin({ kind: "choose", index: 0 });
   }, []);
-  const doLogout = (0, import_react32.useCallback)(async () => {
+  const doLogout = (0, import_react33.useCallback)(async () => {
     await logout().catch(() => {
     });
     setAccessToken(null);
@@ -24032,8 +24131,8 @@ function App2({
     setDrill(null);
     say("\u0412\u044B\u0448\u043B\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430");
   }, [say]);
-  const suggestions = (0, import_react32.useMemo)(() => suggestCommands(commandInput), [commandInput]);
-  const runCommand = (0, import_react32.useCallback)(
+  const suggestions = (0, import_react33.useMemo)(() => suggestCommands(commandInput), [commandInput]);
+  const runCommand = (0, import_react33.useCallback)(
     async (raw) => {
       const parsed = parseCommand(raw);
       if (!parsed) return setCommandOpen(false);
@@ -24088,6 +24187,10 @@ function App2({
           return void doLogout();
         case "whoami":
           return say(accessToken ? `\u0412\u044B \u0432\u043E\u0448\u043B\u0438 \xB7 ${userId}` : "\u0412\u044B \u043D\u0435 \u0432\u043E\u0448\u043B\u0438 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
+        case "setup":
+          setSetupStep("lang");
+          setSetupChoice(LANGS.findIndex((candidate) => candidate.id === prefs.lang));
+          return;
         case "help":
           return setShowHelp(true);
         case "quit":
@@ -24109,10 +24212,68 @@ function App2({
       onExit,
       exit,
       startLogin,
-      doLogout
+      doLogout,
+      prefs
     ]
   );
+  const finishSetup = (0, import_react33.useCallback)(
+    (next) => {
+      const done = { ...next, setupDone: true };
+      setPrefs(done);
+      setSetupStep(null);
+      void savePrefs(done);
+    },
+    []
+  );
+  const setupOptionCount = (0, import_react33.useCallback)(
+    (step) => step === "lang" ? LANGS.length : step === "theme" ? THEMES.length : 2,
+    []
+  );
+  const advanceSetup = (0, import_react33.useCallback)(() => {
+    if (!setupStep) return;
+    if (setupStep === "lang") {
+      const picked = LANGS[setupChoice]?.id ?? prefs.lang;
+      const next = { ...prefs, lang: picked };
+      setLang(picked);
+      setPrefs(next);
+      setSetupStep("theme");
+      setSetupChoice(THEMES.findIndex((candidate) => candidate.id === next.theme));
+      return;
+    }
+    if (setupStep === "theme") {
+      const picked = THEMES[setupChoice]?.id ?? prefs.theme;
+      const next = { ...prefs, theme: picked };
+      applyPalette(picked);
+      setPrefs(next);
+      setSetupStep("login");
+      setSetupChoice(0);
+      return;
+    }
+    if (setupChoice === 0) {
+      finishSetup(prefs);
+      startLogin();
+      return;
+    }
+    finishSetup(prefs);
+  }, [setupStep, setupChoice, prefs, finishSetup, startLogin]);
+  const moveSetup = (0, import_react33.useCallback)(
+    (delta) => {
+      if (!setupStep) return;
+      const count = setupOptionCount(setupStep);
+      const next = Math.min(count - 1, Math.max(0, setupChoice + delta));
+      setSetupChoice(next);
+      if (setupStep === "theme") applyPalette(THEMES[next]?.id ?? prefs.theme);
+      if (setupStep === "lang") setLang(LANGS[next]?.id ?? prefs.lang);
+    },
+    [setupStep, setupChoice, setupOptionCount, prefs]
+  );
   use_input_default((input, key) => {
+    if (setupStep && !login) {
+      if (key.downArrow || input === "j") return moveSetup(1);
+      if (key.upArrow || input === "k") return moveSetup(-1);
+      if (key.return) return advanceSetup();
+      return;
+    }
     if (login) {
       if (key.escape) {
         loginAbort.current?.abort();
@@ -24289,7 +24450,7 @@ function App2({
       });
     }
   });
-  const playingIndex = (0, import_react32.useMemo)(() => {
+  const playingIndex = (0, import_react33.useMemo)(() => {
     if (drill) {
       return drill.rows.findIndex((row) => row.kind === "show" && row.id === now?.showId);
     }
@@ -24303,7 +24464,7 @@ function App2({
     if (activeSection === "likes") return sectionRows.findIndex((show) => show.id === now.showId);
     return -1;
   }, [drill, activeSection, sectionRows, radioNow, now?.showId]);
-  const details = (0, import_react32.useMemo)(() => {
+  const details = (0, import_react33.useMemo)(() => {
     if (!rows[selected]) return null;
     if (detailShow) {
       const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
@@ -24323,7 +24484,7 @@ function App2({
     }
     return describeRow(activeSection, drill, rows[selected]);
   }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection, drill]);
-  const info = (0, import_react32.useMemo)(() => {
+  const info = (0, import_react33.useMemo)(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
@@ -24350,8 +24511,21 @@ function App2({
     }
     return { title: t("player.nothing"), subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
-  if (login) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(LoginOverlay, { phase: login, width: width2 });
-  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(HelpOverlay, { width: width2 });
+  if (login) return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(LoginOverlay, { phase: login, width: width2 });
+  if (setupStep) {
+    return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+      Setup,
+      {
+        step: setupStep,
+        index: SETUP_STEPS.indexOf(setupStep),
+        lang: prefs.lang,
+        themeId: prefs.theme,
+        selected: setupChoice,
+        width: width2
+      }
+    );
+  }
+  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(HelpOverlay, { width: width2 });
   const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
   const PLAYER_ROWS = 5;
   const HINT_ROWS = 1;
@@ -24368,10 +24542,10 @@ function App2({
   const listHeight = Math.max(3, listBox - 4);
   const detailsBox = Math.max(5, bodyHeight - listBox);
   const listTitle = drill ? `${drill.title} \u2014 ${t("hint.back")}` : activeSection === "search" ? `${sectionListTitle("search")}: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${sectionListTitle(activeSection)} \u2014 ${t("hint.loading")}` : activeSection === "radio" ? `${sectionListTitle(activeSection)} \xB7 ${t("hint.radioInfo")}` : activeSection === "settings" ? `${sectionListTitle(activeSection)} \xB7 ${t("settings.hint")}` : sectionListTitle(activeSection);
-  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    showLogo ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Logo, { frame, width: width2 }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
+    showLogo ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Logo, { frame, width: width2 }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
         Sidebar,
         {
           sections: SECTIONS2.map((candidate, index) => ({
@@ -24388,8 +24562,8 @@ function App2({
           height: bodyHeight - 2
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
           ListPanel,
           {
             title: listTitle,
@@ -24403,7 +24577,7 @@ function App2({
             emptyHint: section.needsAuth && !accessToken ? t("empty.auth") : section.emptyHint
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
           DetailsPanel,
           {
             details,
@@ -24414,7 +24588,7 @@ function App2({
         )
       ] })
     ] }),
-    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       CommandLine,
       {
         input: commandInput,
@@ -24424,8 +24598,8 @@ function App2({
         error: commandError
       }
     ) : null,
-    showMeter ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(LevelMeter, { channelsDb: channels, peaksDb: peaks, width: width2 }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+    showMeter ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(LevelMeter, { channelsDb: channels, peaksDb: peaks, width: width2 }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       PlayerBar,
       {
         title: info.title,
@@ -24440,7 +24614,7 @@ function App2({
         width: width2
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Text, { color: message ? theme.paused : theme.muted, children: fit(message ?? t("hint.bar"), Math.max(20, width2 - 2)) }) })
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Text, { color: message ? theme.paused : theme.muted, children: fit(message ?? t("hint.bar"), Math.max(20, width2 - 2)) }) })
   ] });
 }
 function splitBurst(input) {
@@ -24584,12 +24758,12 @@ function describeRow(sectionId, drill, row) {
       return null;
   }
 }
-var import_react32, import_jsx_runtime10, SIDEBAR_WIDTH, DRILL_COLUMNS;
+var import_react33, import_jsx_runtime11, SIDEBAR_WIDTH, DRILL_COLUMNS;
 var init_App2 = __esm({
   async "src/tui/App.tsx"() {
     "use strict";
     await init_build2();
-    import_react32 = __toESM(require_react(), 1);
+    import_react33 = __toESM(require_react(), 1);
     init_radio();
     init_catalog();
     init_shows();
@@ -24614,6 +24788,7 @@ var init_App2 = __esm({
     init_i18n();
     init_theme();
     init_prefs();
+    await init_Setup();
     await init_Logo();
     await init_LevelMeter();
     init_meter();
@@ -24622,7 +24797,7 @@ var init_App2 = __esm({
     await init_Sidebar();
     init_theme();
     init_usePlayer();
-    import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
     SIDEBAR_WIDTH = 24;
     DRILL_COLUMNS = [
       { header: "", width: 6, value: (row) => row.kind === "track" ? "\u0442\u0440\u0435\u043A" : "\u0432\u044B\u043F\u0443\u0441\u043A" },
@@ -26217,14 +26392,14 @@ async function tuiCommand() {
     );
   }
   const session = await getValidSession();
-  const [{ render: render2 }, React20, { App: App3 }] = await Promise.all([
+  const [{ render: render2 }, React21, { App: App3 }] = await Promise.all([
     init_build2().then(() => build_exports),
     Promise.resolve().then(() => __toESM(require_react(), 1)),
     init_App2().then(() => App_exports)
   ]);
   await backend.start();
   const instance = render2(
-    React20.createElement(App3, {
+    React21.createElement(App3, {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,

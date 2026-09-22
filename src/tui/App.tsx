@@ -78,6 +78,7 @@ import {
 import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, type Lang } from "./i18n.ts";
 import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
+import { SETUP_STEPS, Setup, type SetupStep } from "./Setup.tsx";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { LevelMeter } from "./LevelMeter.tsx";
 import { decayPeak } from "../player/meter.ts";
@@ -182,7 +183,10 @@ export function App({
   const [query, setQuery] = useState("");
   const [typing, setTyping] = useState(false);
 
-  const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang() });
+  const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang(), setupDone: true });
+  /** Шаг первичной настройки; null — она пройдена. */
+  const [setupStep, setSetupStep] = useState<SetupStep | null>(null);
+  const [setupChoice, setSetupChoice] = useState(0);
   /** Уровни по каналам и удерживаемые пики — для измерителя. */
   const [channels, setChannels] = useState<number[]>([]);
   const [peaks, setPeaks] = useState<number[]>([]);
@@ -267,6 +271,8 @@ export function App({
       applyPalette(loaded.theme);
       setLang(loaded.lang);
       setPrefs(loaded);
+      // Спрашиваем один раз, при самом первом запуске.
+      if (!loaded.setupDone) setSetupStep("lang");
     });
   }, []);
 
@@ -1004,6 +1010,10 @@ export function App({
           return void doLogout();
         case "whoami":
           return say(accessToken ? `Вы вошли · ${userId}` : "Вы не вошли — наберите /login");
+        case "setup":
+          setSetupStep("lang");
+          setSetupChoice(LANGS.findIndex((candidate) => candidate.id === prefs.lang));
+          return;
         case "help":
           return setShowHelp(true);
         case "quit":
@@ -1026,10 +1036,90 @@ export function App({
       exit,
       startLogin,
       doLogout,
+      prefs,
     ],
   );
 
+  /** Завершить настройку и открыть плеер. */
+  const finishSetup = useCallback(
+    (next: Prefs) => {
+      const done = { ...next, setupDone: true };
+      setPrefs(done);
+      setSetupStep(null);
+      void savePrefs(done);
+    },
+    [],
+  );
+
+  const setupOptionCount = useCallback(
+    (step: SetupStep) => (step === "lang" ? LANGS.length : step === "theme" ? THEMES.length : 2),
+    [],
+  );
+
+  /**
+   * Применить выбор шага и перейти к следующему.
+   *
+   * Язык и тема применяются СРАЗУ, ещё до подтверждения: пока ходишь по списку,
+   * экран уже перекрашен и переведён, и выбирать приходится по тому, что видно,
+   * а не по названию.
+   */
+  const advanceSetup = useCallback(() => {
+    if (!setupStep) return;
+
+    if (setupStep === "lang") {
+      const picked = LANGS[setupChoice]?.id ?? prefs.lang;
+      const next = { ...prefs, lang: picked };
+      setLang(picked);
+      setPrefs(next);
+      setSetupStep("theme");
+      setSetupChoice(THEMES.findIndex((candidate) => candidate.id === next.theme));
+      return;
+    }
+
+    if (setupStep === "theme") {
+      const picked = THEMES[setupChoice]?.id ?? prefs.theme;
+      const next = { ...prefs, theme: picked };
+      applyPalette(picked);
+      setPrefs(next);
+      setSetupStep("login");
+      setSetupChoice(0);
+      return;
+    }
+
+    // Шаг входа: «Войти сейчас» или «Позже». Пропуск — полноценный выбор, эфир
+    // играет и без аккаунта.
+    if (setupChoice === 0) {
+      finishSetup(prefs);
+      startLogin();
+      return;
+    }
+    finishSetup(prefs);
+  }, [setupStep, setupChoice, prefs, finishSetup, startLogin]);
+
+  const moveSetup = useCallback(
+    (delta: number) => {
+      if (!setupStep) return;
+      const count = setupOptionCount(setupStep);
+      const next = Math.min(count - 1, Math.max(0, setupChoice + delta));
+      setSetupChoice(next);
+
+      // Предпросмотр темы: перекрашиваем на лету, не дожидаясь Enter.
+      if (setupStep === "theme") applyPalette(THEMES[next]?.id ?? prefs.theme);
+      if (setupStep === "lang") setLang(LANGS[next]?.id ?? prefs.lang);
+    },
+    [setupStep, setupChoice, setupOptionCount, prefs],
+  );
+
   useInput((input, key) => {
+    // Мастер первого запуска держит ввод целиком: за ним ещё нет ни списка, ни
+    // панелей, а любая «горячая» клавиша увела бы человека в пустоту.
+    if (setupStep && !login) {
+      if (key.downArrow || input === "j") return moveSetup(1);
+      if (key.upArrow || input === "k") return moveSetup(-1);
+      if (key.return) return advanceSetup();
+      return;
+    }
+
     // Оверлей входа держит ввод: пока ждём подтверждения, навигация по каталогу
     // только сбивала бы с толку — на экране нет ни списка, ни панелей.
     if (login) {
@@ -1307,6 +1397,18 @@ export function App({
   }, [now, radioNow, status]);
 
   if (login) return <LoginOverlay phase={login} width={width} />;
+  if (setupStep) {
+    return (
+      <Setup
+        step={setupStep}
+        index={SETUP_STEPS.indexOf(setupStep)}
+        lang={prefs.lang}
+        themeId={prefs.theme}
+        selected={setupChoice}
+        width={width}
+      />
+    );
+  }
   if (showHelp) return <HelpOverlay width={width} />;
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
