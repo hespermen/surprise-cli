@@ -8,7 +8,7 @@ Live radio, the show archive and your own library — without a browser.
 curl -fsSL https://surprise.fm/cli | sh
 ```
 
-Then run `surprise`.
+The player opens by itself. After that, run it with `surprise`.
 
 The installer checks Node, removes an older version if there was one, and tells
 you about mpv. Reading it first is a sound habit — it is served as plain text for
