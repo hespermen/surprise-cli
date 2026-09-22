@@ -6,7 +6,15 @@
 npm i -g github:hespermen/surprise-cli && surprise radio
 ```
 
-После публикации в npm — короче:
+Если npm ответил «added 1 package», а команда `surprise` не нашлась — у вас npm
+10.x, где глобальная установка из git оставляет пустой каталог пакета (`npm pack`
+на том же адресе при этом работает). Обходной путь той же одной строкой:
+
+```bash
+npm i -g "$(npm pack -s github:hespermen/surprise-cli)" && surprise radio
+```
+
+После публикации в npm будет короче всего:
 
 ```bash
 npm i -g surprise-fm && surprise radio
