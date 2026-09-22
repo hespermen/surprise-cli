@@ -1,0 +1,58 @@
+{
+  "name": "surprise-fm",
+  "version": "0.1.0",
+  "description": "SURPRISE.FM в терминале: эфир, архив выпусков и своя библиотека",
+  "type": "module",
+  "bin": {
+    "surprise": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "prepublishOnly": "npm run typecheck && npm test",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "ink": "^5.1.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.6.3"
+  },
+  "license": "MIT",
+  "keywords": [
+    "surprise.fm",
+    "radio",
+    "music",
+    "cli",
+    "tui",
+    "terminal",
+    "player",
+    "mpv"
+  ],
+  "homepage": "https://surprise.fm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hespermen/surprise-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hespermen/surprise-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
