@@ -6367,12 +6367,15 @@ function versionFlag(binary) {
   const name = binary.replace(/\.exe$/i, "").split(/[\\/]/).pop() ?? binary;
   return VERSION_FLAG[name] ?? "--version";
 }
+var DETECT_TIMEOUT_MS = 12e3;
+var MISSING_CODES = /* @__PURE__ */ new Set(["ENOENT", "EACCES", "ENOTDIR", "EPERM"]);
 async function isAvailable(binary) {
   try {
-    await run(binary, [versionFlag(binary)], { timeout: 4e3 });
+    await run(binary, [versionFlag(binary)], { timeout: DETECT_TIMEOUT_MS });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = error.code;
+    return !(typeof code === "string" && MISSING_CODES.has(code));
   }
 }
 function installHint() {
@@ -6398,7 +6401,13 @@ var NoAudioBackendError = class extends Error {
 async function pickBackend(preferred) {
   const mpvBinary = process.env.SURPRISE_MPV ?? "mpv";
   const ffplayBinary = process.env.SURPRISE_FFPLAY ?? "ffplay";
-  if (preferred !== "ffplay" && await isAvailable(mpvBinary)) {
+  const forced = process.env.SURPRISE_BACKEND;
+  const wanted = preferred ?? (forced === "mpv" || forced === "ffplay" ? forced : void 0);
+  if (wanted === "mpv") {
+    if (!await isAvailable(mpvBinary)) throw new NoAudioBackendError();
+    return { backend: new MpvBackend(mpvBinary), name: "mpv", degraded: false };
+  }
+  if (wanted !== "ffplay" && await isAvailable(mpvBinary)) {
     return { backend: new MpvBackend(mpvBinary), name: "mpv", degraded: false };
   }
   if (await isAvailable(ffplayBinary)) {

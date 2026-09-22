@@ -114,6 +114,7 @@ JSON-IPC (`src/player/fixtures/fake-mpv.mjs`). Так тесты работаю�
 |---|---|
 | `SURPRISE_API_URL` | другой бэкенд (по умолчанию `https://api.surprise.fm`) |
 | `SURPRISE_MPV` / `SURPRISE_FFPLAY` | пути к плеерам |
+| `SURPRISE_BACKEND` | `mpv` или `ffplay` — выбрать плеер принудительно |
 | `SURPRISE_SESSION_PATH` | где хранить сессию |
 | `SURPRISE_PLATFORM_HINT` | временный обход, пока правка `pickLoginMethod` не на проде |
 | `NO_COLOR` | выключить цвет |
