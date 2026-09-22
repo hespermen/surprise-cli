@@ -80,6 +80,8 @@ import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
 import { Visualizer } from "./Visualizer.tsx";
 import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
+import { LevelMeter } from "./LevelMeter.tsx";
+import { decayPeak } from "../player/meter.ts";
 import { parseLevels } from "../player/levels.ts";
 import { isLiked, toggleLike, type LikeTarget } from "../api/library.ts";
 import { Sidebar } from "./Sidebar.tsx";
@@ -182,8 +184,11 @@ export function App({
   const [typing, setTyping] = useState(false);
 
   const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang() });
-  /** История громкости для визуализатора, слева направо по времени. */
+  /** История громкости для ленты, слева направо по времени. */
   const [levels, setLevels] = useState<number[]>([]);
+  /** Уровни по каналам и удерживаемые пики — для измерителя. */
+  const [channels, setChannels] = useState<number[]>([]);
+  const [peaks, setPeaks] = useState<number[]>([]);
   /** Кадр перелива логотипа. */
   const [frame, setFrame] = useState(0);
 
@@ -517,12 +522,24 @@ export function App({
   useEffect(() => {
     if (!backend.levels) return;
     const timer = setInterval(() => {
-      if (status.paused || status.idle) return;
+      if (status.paused || status.idle) {
+        // На паузе звука нет — и прибор обязан это показывать. Замерший на
+        // последнем значении измеритель читается как «всё ещё играет».
+        setChannels((previous) => previous.map(() => -100));
+        setPeaks((previous) => previous.map((peak) => decayPeak(peak, -100, 3)));
+        return;
+      }
       void backend.levels?.().then((raw) => {
-        const { rmsDb } = parseLevels(raw);
+        const { rmsDb, channelsDb } = parseLevels(raw);
         // Держим ровно столько, сколько может поместиться в самую широкую
         // строку: хранить больше незачем, а меньше — лента дёргалась бы.
         setLevels((previous) => [...previous, rmsDb].slice(-200));
+        setChannels(channelsDb);
+        // Пик подпрыгивает мгновенно и опускается по шагу: иначе короткий
+        // всплеск исчезает раньше, чем его успеешь заметить.
+        setPeaks((previous) =>
+          channelsDb.map((db, index) => decayPeak(previous[index] ?? db, db, 1.5)),
+        );
       });
     }, 120);
     return () => clearInterval(timer);
@@ -1365,10 +1382,15 @@ export function App({
         />
       ) : null}
 
-      {/* Визуализатор показываем только когда бэкенд реально даёт уровни: у
-          ffplay их взять неоткуда, и рисовать движение без данных значило бы
-          врать про звук. */}
-      {backend.levels ? <Visualizer history={levels} palette={theme} width={width} /> : null}
+      {/* Показываем только когда бэкенд реально даёт уровни: у ffplay их взять
+          неоткуда, а прибор с выдуманными числами хуже отсутствующего — по нему
+          принимают решения. */}
+      {backend.levels ? (
+        <>
+          <LevelMeter channelsDb={channels} peaksDb={peaks} width={width} />
+          <Visualizer history={levels} palette={theme} width={width} />
+        </>
+      ) : null}
 
       <PlayerBar
         title={info.title}
