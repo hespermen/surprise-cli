@@ -6,7 +6,9 @@
  * нельзя — он ломается на собственных проверках окружения.
  */
 import { build } from "esbuild";
-import { chmod } from "node:fs/promises";
+import { chmod, readFile } from "node:fs/promises";
+
+const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
 await build({
   entryPoints: ["src/index.ts"],
@@ -41,7 +43,12 @@ await build({
   // В зависимостях его нет и не надо, но без подмены esbuild отказывается
   // собирать бандл целиком.
   alias: { "react-devtools-core": "./scripts/devtools-stub.js" },
-  define: { "process.env.NODE_ENV": '"production"' },
+  // Имя и версия — из package.json, чтобы они не могли разойтись с пакетом.
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    __CLIENT_NAME__: JSON.stringify(pkg.name),
+    __CLIENT_VERSION__: JSON.stringify(pkg.version),
+  },
   logLevel: "info",
 });
 

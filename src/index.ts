@@ -14,7 +14,7 @@ import { playCommand } from "./commands/play.ts";
 import { radioCommand } from "./commands/radio.ts";
 import { tuiCommand } from "./commands/tui.ts";
 import { logoutCommand, whoamiCommand } from "./commands/session.ts";
-import { CLIENT_VERSION } from "./config.ts";
+import { CLIENT_NAME, CLIENT_VERSION } from "./config.ts";
 import { bold, cyan, dim, red } from "./ui/term.ts";
 
 const USAGE = `${bold("surprise")} — SURPRISE.FM в терминале
@@ -48,7 +48,10 @@ async function main(argv: readonly string[]): Promise<number> {
   }
   if (!command || command === "tui") return tuiCommand();
   if (command === "--version" || command === "-v") {
-    process.stdout.write(`${CLIENT_VERSION}\n`);
+    // Имя пакета в ответе обязательно. Старый пакет назывался surprise-fm и
+    // ставил ту же команду `surprise`; оба отвечали «0.1.0», и понять, какой
+    // из них запустился, было нельзя — обновление «не помогало» молча.
+    process.stdout.write(`${CLIENT_NAME} ${CLIENT_VERSION}\n`);
     return 0;
   }
 

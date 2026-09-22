@@ -50,8 +50,8 @@ var init_config = __esm({
     FALLBACK_STREAM = "https://radio.surprise.fm/listen/surprise/radio.mp3";
     NOWPLAYING_INTERVAL_MS = 2e4;
     HEARTBEAT_INTERVAL_MS = 15e3;
-    CLIENT_NAME = "surprise-cli";
-    CLIENT_VERSION = "0.1.0";
+    CLIENT_NAME = true ? "surprise-cli" : "surprise-cli";
+    CLIENT_VERSION = true ? "0.2.0" : "0.0.0-dev";
     PLATFORM_HINT = process.env.SURPRISE_PLATFORM_HINT ?? "cli";
   }
 });
@@ -26610,7 +26610,7 @@ async function main(argv) {
   }
   if (!command || command === "tui") return tuiCommand();
   if (command === "--version" || command === "-v") {
-    process.stdout.write(`${CLIENT_VERSION}
+    process.stdout.write(`${CLIENT_NAME} ${CLIENT_VERSION}
 `);
     return 0;
   }

@@ -27,9 +27,22 @@ export const NOWPLAYING_INTERVAL_MS = 20_000;
 /** Присутствие слушателя в эфире; реже нельзя — на сервере TTL присутствия. */
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
-/** Как подписываемся в User-Agent и x-client-info. */
-export const CLIENT_NAME = "surprise-cli";
-export const CLIENT_VERSION = "0.1.0";
+/**
+ * Как подписываемся в User-Agent и x-client-info.
+ *
+ * Подставляются сборкой из package.json, а не пишутся здесь руками. Вторая
+ * копия версии однажды разойдётся с первой — и разошлась: пакет переименовали,
+ * а версия так и осталась 0.1.0 на два с лишним десятка выпусков. Отличить по
+ * ней обновлённую установку от застрявшей было нельзя.
+ *
+ * Объявления ниже — запасные значения для запуска из исходников без сборки
+ * (тесты, `node --experimental-strip-types`). В собранном файле их не остаётся.
+ */
+declare const __CLIENT_NAME__: string | undefined;
+declare const __CLIENT_VERSION__: string | undefined;
+
+export const CLIENT_NAME = typeof __CLIENT_NAME__ === "string" ? __CLIENT_NAME__ : "surprise-cli";
+export const CLIENT_VERSION = typeof __CLIENT_VERSION__ === "string" ? __CLIENT_VERSION__ : "0.0.0-dev";
 
 /**
  * Как клиент представляется при входе.

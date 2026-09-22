@@ -1,6 +1,6 @@
 {
   "name": "surprise-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SURPRISE.FM в терминале: эфир, архив выпусков и своя библиотека",
   "type": "module",
   "bin": {
