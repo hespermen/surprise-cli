@@ -5,18 +5,30 @@
 Live radio, the show archive and your own library — without a browser.
 
 ```bash
-npm i -g "$(npm pack -s github:hespermen/surprise-cli)" && surprise radio
+curl -fsSL https://surprise.fm/cli | sh
 ```
 
-That looks longer than the usual `npm i -g github:…`, and it isn't fussiness. On
-npm 10.x the short form answers "added 1 package" and leaves an **empty** package
-directory: the command appears but won't run. The failure looks like success, so
-the line above is the one that works everywhere. On npm 11 and newer the short
-form is fine too:
+Then run `surprise`.
+
+The installer checks Node, removes an older version if there was one, and tells
+you about mpv. Reading it first is a sound habit — it is served as plain text for
+exactly that reason:
 
 ```bash
-npm i -g github:hespermen/surprise-cli && surprise radio
+curl -fsSL https://surprise.fm/cli | less
 ```
+
+Straight through npm works too, if you would rather not run a script from the
+network:
+
+```bash
+npm i -g "$(npm pack -s github:hespermen/surprise-cli)"
+```
+
+That form is longer than the usual `npm i -g github:…` and it isn't fussiness: on
+npm 10.x the short one answers "added 1 package" and leaves an **empty** package
+directory — the command appears but won't run. The failure looks like success. On
+npm 11 and newer the short form is fine too.
 
 ## Installing
 
