@@ -42,6 +42,14 @@ import {
   type StoreTrack,
   type TrackAccess,
 } from "../api/store.ts";
+import {
+  TelegramUnavailableError,
+  logout as logoutSession,
+  startTelegramLogin,
+  waitForTelegramLogin,
+} from "../net/auth.ts";
+import { parseJwt } from "../net/jwt.ts";
+import { renderQr } from "../ui/term.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
 import { getListenerId, getSessionId } from "../lib/ids.ts";
@@ -51,6 +59,7 @@ import { CommandLine } from "./CommandLine.tsx";
 import { parseCommand, resolveCommand, suggestCommands, SECTION_ALIASES } from "./commands.ts";
 import { DetailsPanel, type Details } from "./DetailsPanel.tsx";
 import { HelpOverlay } from "./HelpOverlay.tsx";
+import { LoginOverlay, type LoginPhase } from "./LoginOverlay.tsx";
 import { ListPanel } from "./ListPanel.tsx";
 import { PlayerBar } from "./PlayerBar.tsx";
 import { SECTIONS, sectionById, type ColumnSpec, type SavedRow, type SectionId } from "./sections.ts";
@@ -105,7 +114,19 @@ const DRILL_COLUMNS: ReadonlyArray<ColumnSpec<DrillRow>> = [
   { header: "Длит.", width: 8, value: (row) => formatDuration(row.duration) },
 ];
 
-export function App({ backend, backendName, accessToken, userId, onExit }: AppProps): React.ReactElement {
+export function App({
+  backend,
+  backendName,
+  accessToken: initialToken,
+  userId: initialUserId,
+  onExit,
+}: AppProps): React.ReactElement {
+  // Токен — состояние, а не просто входной параметр: после `/login` личные
+  // разделы обязаны ожить сразу, без перезапуска программы.
+  const [accessToken, setAccessToken] = useState<string | null>(initialToken);
+  const [userId, setUserId] = useState(initialUserId);
+  const [login, setLogin] = useState<LoginPhase | null>(null);
+
   const { exit } = useApp();
   const { stdout } = useStdout();
   const status = usePlayer(backend);
@@ -359,7 +380,7 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
   const playStoreTrack = useCallback(
     async (track: StoreTrack) => {
       if (!accessToken) {
-        say("Треки — только для вошедших. Выйдите и наберите: surprise login");
+        say("Треки — только для вошедших. Наберите /login");
         return;
       }
       say(`Открываем «${track.title ?? "трек"}»…`);
@@ -497,7 +518,7 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       case "releases": {
         const release = row as Release;
         if (!accessToken) {
-          say("Треки релизов — только для вошедших. Выйдите и наберите: surprise login");
+          say("Треки релизов — только для вошедших. Наберите /login");
           return;
         }
         return openDrill(release.title, async () =>
@@ -587,6 +608,81 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
 
   // ── Командная строка ──
 
+  /**
+   * Вход, не выходя из интерфейса.
+   *
+   * Сессию сохраняет сам waitForTelegramLogin — здесь остаётся подхватить токен
+   * в состояние и сбросить кэш разделов: под новым пользователем они другие, а
+   * показывать чужое «Избранное» до перезапуска — прямая ложь.
+   */
+  const loginAbort = React.useRef<AbortController | null>(null);
+
+  const startLogin = useCallback(async () => {
+    setCommandOpen(false);
+    setLogin({ kind: "starting" });
+
+    let pending;
+    try {
+      pending = await startTelegramLogin();
+    } catch (error) {
+      setLogin({
+        kind: "failed",
+        error:
+          error instanceof TelegramUnavailableError
+            ? "Сервер пока не пускает CLI в telegram-вход. Запасной путь: выйти (q) и `surprise login --email`"
+            : (error as Error).message,
+      });
+      return;
+    }
+
+    const qr = await renderQr(pending.url);
+    setLogin({
+      kind: "waiting",
+      url: pending.url,
+      qr,
+      secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1000)),
+    });
+
+    const abort = new AbortController();
+    loginAbort.current = abort;
+
+    const result = await waitForTelegramLogin(pending, {
+      signal: abort.signal,
+      onTick: (secondsLeft) =>
+        setLogin((previous) => (previous?.kind === "waiting" ? { ...previous, secondsLeft } : previous)),
+    });
+    loginAbort.current = null;
+
+    if (result.status === "ok") {
+      setAccessToken(result.session.access_token);
+      setUserId(result.session.user_id);
+      setLogin(null);
+      // Разделы перечитаются под новым токеном — старые строки принадлежали
+      // другому (или никакому) пользователю.
+      setRows((previous) => ({ radio: previous.radio }));
+      setSelected({});
+      setDrill(null);
+      const claims = parseJwt(result.session.access_token);
+      say(`Вошли${claims.email ? ` · ${claims.email}` : ""}`);
+      return;
+    }
+    if (result.status === "expired") {
+      setLogin({ kind: "failed", error: "Время на подтверждение вышло — наберите /login заново" });
+      return;
+    }
+    setLogin({ kind: "failed", error: result.error });
+  }, [say]);
+
+  const doLogout = useCallback(async () => {
+    await logoutSession().catch(() => {});
+    setAccessToken(null);
+    setUserId("");
+    setRows((previous) => ({ radio: previous.radio }));
+    setSelected({});
+    setDrill(null);
+    say("Вышли из аккаунта");
+  }, [say]);
+
   const suggestions = useMemo(() => suggestCommands(commandInput), [commandInput]);
 
   const runCommand = useCallback(
@@ -641,11 +737,11 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
           setDrill(null);
           return;
         case "login":
-          // Вход требует ввода и открытия ссылки — в полноэкранном режиме это
-          // не сделать честно. Говорим, что набрать, вместо подделки процесса.
-          return say("Выйдите (q) и наберите: surprise login");
+          return void startLogin();
+        case "logout":
+          return void doLogout();
         case "whoami":
-          return say(accessToken ? `Вы вошли · ${userId}` : "Вы не вошли — surprise login");
+          return say(accessToken ? `Вы вошли · ${userId}` : "Вы не вошли — наберите /login");
         case "help":
           return setShowHelp(true);
         case "quit":
@@ -666,10 +762,23 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       say,
       onExit,
       exit,
+      startLogin,
+      doLogout,
     ],
   );
 
   useInput((input, key) => {
+    // Оверлей входа держит ввод: пока ждём подтверждения, навигация по каталогу
+    // только сбивала бы с толку — на экране нет ни списка, ни панелей.
+    if (login) {
+      if (key.escape) {
+        loginAbort.current?.abort();
+        loginAbort.current = null;
+        setLogin(null);
+      }
+      return;
+    }
+
     // Командная строка перехватывает ввод целиком: иначе «q» в команде вышло бы
     // из программы, а «j» уехало бы в список.
     if (commandOpen) {
@@ -692,9 +801,14 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         return setCommandInput((value) => value.slice(0, -1));
       }
       if (input && !key.ctrl && !key.meta) {
+        const { text, submitted } = splitBurst(input);
         setCommandError(null);
         setCommandHighlight(0);
-        setCommandInput((value) => value + input);
+        const next = commandInput + text;
+        setCommandInput(next);
+        // Enter внутри той же пачки — выполняем сразу: иначе «/login⏎», пришедший
+        // одной строкой, просто осел бы в поле ввода.
+        if (submitted) void runCommand(next);
       }
       return;
     }
@@ -702,19 +816,26 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     if (typing) {
       if (key.escape || key.return) return setTyping(false);
       if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
+      if (input && !key.ctrl && !key.meta) {
+        const { text, submitted } = splitBurst(input);
+        if (text) setQuery((value) => value + text);
+        if (submitted) setTyping(false);
+      }
       return;
     }
 
     if (showHelp) return setShowHelp(false);
 
     // Слэш открывает строку команд со списком: это и есть ответ на вопрос
-    // «что тут вообще можно».
-    if (input === "/" || input === ":") {
+    // «что тут вообще можно». Проверяем НАЧАЛО пачки, а не равенство: при
+    // быстром наборе «/login» прилетает одной строкой.
+    if (input.startsWith("/") || input.startsWith(":")) {
+      const { text, submitted } = splitBurst(input.slice(1));
       setCommandOpen(true);
-      setCommandInput("");
+      setCommandInput(text);
       setCommandHighlight(0);
       setCommandError(null);
+      if (submitted && text) void runCommand(text);
       return;
     }
 
@@ -871,6 +992,7 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     return { title: "Ничего не играет", subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
 
+  if (login) return <LoginOverlay phase={login} width={width} />;
   if (showHelp) return <HelpOverlay width={width} />;
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
@@ -915,7 +1037,7 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
             height={listHeight}
             width={contentWidth}
             focused={focus === "list"}
-            emptyHint={section.needsAuth && !accessToken ? "Нужен вход: surprise login" : section.emptyHint}
+            emptyHint={section.needsAuth && !accessToken ? "Нужен вход — наберите /login" : section.emptyHint}
           />
 
           <DetailsPanel
@@ -957,6 +1079,21 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       </Box>
     </Box>
   );
+}
+
+/**
+ * Разбор пачки символов из одного события ввода.
+ *
+ * ink отдаёт быстрый набор и ВСТАВКУ целиком: `/login` + Enter приходят одной
+ * строкой «/login\r», а не семью событиями. Обработчики, сравнивавшие input с
+ * одиночным символом, на такой строке не срабатывали вовсе — команда молча
+ * игнорировалась, а вставленная в поиск ссылка терялась.
+ */
+function splitBurst(input: string): { text: string; submitted: boolean } {
+  const submitted = /[\r\n]/.test(input);
+  // Управляющие символы в текст не пускаем: они рисуются мусором.
+  const text = input.replace(/[\r\n]/g, "").replace(/[\u0000-\u001F\u007F]/g, "");
+  return { text, submitted };
 }
 
 function clampSize(value: number | undefined, fallback: number, minimum: number): number {

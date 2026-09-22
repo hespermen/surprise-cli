@@ -430,6 +430,45 @@ var init_format = __esm({
   }
 });
 
+// src/net/jwt.ts
+function decodeSegment(segment) {
+  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  const json = Buffer.from(base64, "base64").toString("utf8");
+  return JSON.parse(json);
+}
+function parseJwt(token) {
+  if (!token) return EMPTY;
+  const segment = token.split(".")[1];
+  if (!segment) return EMPTY;
+  let payload;
+  try {
+    payload = decodeSegment(segment);
+  } catch {
+    return EMPTY;
+  }
+  if (!payload || typeof payload !== "object") return EMPTY;
+  const p = payload;
+  return {
+    sub: typeof p.sub === "string" ? p.sub : null,
+    exp: typeof p.exp === "number" && Number.isFinite(p.exp) ? p.exp : null,
+    role: typeof p.role === "string" ? p.role : null,
+    email: typeof p.email === "string" ? p.email : null
+  };
+}
+function expiresAtFromToken(token) {
+  return parseJwt(token).exp ?? Math.floor(Date.now() / 1e3) + 3600;
+}
+function isExpired(expiresAt, marginSec, nowSec = Math.floor(Date.now() / 1e3)) {
+  return expiresAt - nowSec <= marginSec;
+}
+var EMPTY;
+var init_jwt = __esm({
+  "src/net/jwt.ts"() {
+    "use strict";
+    EMPTY = { sub: null, exp: null, role: null, email: null };
+  }
+});
+
 // src/net/session.ts
 import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
@@ -514,6 +553,154 @@ var init_session = __esm({
     "use strict";
     LOCK_STALE_MS = 3e4;
     LOCK_POLL_MS = 50;
+  }
+});
+
+// src/net/auth.ts
+function toSession(tokens) {
+  return {
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expires_at: expiresAtFromToken(tokens.access_token),
+    user_id: parseJwt(tokens.access_token).sub ?? ""
+  };
+}
+async function startTelegramLogin() {
+  const data = await callFunction("telegram-login-start", {
+    mode: "login",
+    platform: PLATFORM_HINT
+  });
+  if (data.method !== "bot" || !data.nonce || !data.poll_secret || !data.url) {
+    throw new TelegramUnavailableError();
+  }
+  return {
+    nonce: data.nonce,
+    pollSecret: data.poll_secret,
+    url: data.url,
+    expiresAt: Math.floor(Date.now() / 1e3) + (data.expires_in ?? 300)
+  };
+}
+async function pollTelegramLogin(pending) {
+  let data;
+  try {
+    data = await callFunction(
+      "telegram-login-poll",
+      { nonce: pending.nonce, poll_secret: pending.pollSecret },
+      { retries: 0 }
+    );
+  } catch (error) {
+    if (error instanceof NetworkError) return { status: "pending" };
+    if (error instanceof ApiError) {
+      const body = error.body;
+      if (body?.status === "failed") return { status: "failed", error: body.error ?? error.message };
+      return { status: "failed", error: error.message };
+    }
+    throw error;
+  }
+  if (data.status === "ok" && data.session) {
+    return { status: "ok", session: toSession(data.session), isNew: data.is_new === true };
+  }
+  if (data.status === "expired") return { status: "expired" };
+  if (data.status === "failed") return { status: "failed", error: data.error ?? "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0439\u0442\u0438" };
+  return { status: "pending" };
+}
+async function waitForTelegramLogin(pending, options = {}) {
+  let delayMs = 1500;
+  for (; ; ) {
+    if (options.signal?.aborted) return { status: "failed", error: "\u0412\u0445\u043E\u0434 \u043E\u0442\u043C\u0435\u043D\u0451\u043D" };
+    const secondsLeft = pending.expiresAt - Math.floor(Date.now() / 1e3);
+    if (secondsLeft <= 0) return { status: "expired" };
+    options.onTick?.(secondsLeft);
+    const result = await pollTelegramLogin(pending);
+    if (result.status !== "pending") {
+      if (result.status === "ok") await persist(result.session);
+      return result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    delayMs = Math.min(delayMs + 500, 4e3);
+  }
+}
+async function loginWithPassword(email, password) {
+  const data = await request(authUrl("token?grant_type=password"), {
+    method: "POST",
+    headers: anonHeaders(),
+    body: { email, password },
+    retries: 0
+  });
+  if (!data?.access_token || !data.refresh_token) {
+    throw new Error("\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u0442\u043E\u043A\u0435\u043D\u044B \u2014 \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437");
+  }
+  const session = toSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+  await persist(session);
+  return session;
+}
+async function persist(session) {
+  await withSessionLock(() => writeSession(session));
+}
+function refreshOnce(stale) {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = withSessionLock(async () => {
+    const current = await readSession() ?? stale;
+    if (!isExpired(current.expires_at, REFRESH_MARGIN_SEC)) return current;
+    try {
+      const data = await request(authUrl("token?grant_type=refresh_token"), {
+        method: "POST",
+        headers: anonHeaders(),
+        body: { refresh_token: current.refresh_token },
+        retries: 0
+      });
+      if (!data?.access_token || !data.refresh_token) {
+        await clearSession();
+        return null;
+      }
+      const next = toSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+      await writeSession(next);
+      return next;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        await clearSession();
+        return null;
+      }
+      return current;
+    }
+  }).finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+async function getValidSession() {
+  const session = await readSession();
+  if (!session) return null;
+  if (!isExpired(session.expires_at, REFRESH_MARGIN_SEC)) return session;
+  return refreshOnce(session);
+}
+async function logout() {
+  const session = await readSession();
+  await withSessionLock(() => clearSession());
+  if (!session) return;
+  await request(authUrl("logout"), {
+    method: "POST",
+    headers: { ...anonHeaders(), Authorization: `Bearer ${session.access_token}` },
+    retries: 0
+  }).catch(() => {
+  });
+}
+var REFRESH_MARGIN_SEC, TelegramUnavailableError, refreshInFlight;
+var init_auth = __esm({
+  "src/net/auth.ts"() {
+    "use strict";
+    init_config();
+    init_http();
+    init_jwt();
+    init_session();
+    REFRESH_MARGIN_SEC = 120;
+    TelegramUnavailableError = class extends Error {
+      constructor() {
+        super("\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u043F\u043E \u043F\u043E\u0447\u0442\u0435: surprise login --email");
+        this.name = "TelegramUnavailableError";
+      }
+    };
+    refreshInFlight = null;
   }
 });
 
@@ -5047,6 +5234,102 @@ var require_server = __commonJS({
 var require_lib = __commonJS({
   "node_modules/qrcode/lib/index.js"(exports, module) {
     module.exports = require_server();
+  }
+});
+
+// src/ui/term.ts
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline/promises";
+function terminalWidth() {
+  return process.stdout.columns ?? 80;
+}
+function visibleWidth(line) {
+  return [...line.replace(/\u001B\[[0-9;]*m/g, "")].length;
+}
+async function renderQr(text) {
+  let rendered;
+  try {
+    rendered = await import_qrcode.default.toString(text, { type: "terminal", small: true, margin: 1 });
+  } catch {
+    return null;
+  }
+  const widest = rendered.split("\n").reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+  return widest > terminalWidth() ? null : rendered.replace(/\n+$/, "");
+}
+function openUrl(url) {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  try {
+    const child = spawn(command, [url], { stdio: "ignore", detached: true });
+    child.on("error", () => {
+    });
+    child.unref();
+  } catch {
+  }
+}
+function isInteractive() {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+async function promptLine(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
+async function promptHidden(question) {
+  const { stdin, stdout } = process;
+  stdout.write(question);
+  const wasRaw = stdin.isRaw === true;
+  if (stdin.isTTY) stdin.setRawMode(true);
+  stdin.resume();
+  stdin.setEncoding("utf8");
+  return new Promise((resolve, reject) => {
+    let value = "";
+    const cleanup = () => {
+      stdin.removeListener("data", onData);
+      if (stdin.isTTY) stdin.setRawMode(wasRaw);
+      stdin.pause();
+      stdout.write("\n");
+    };
+    const onData = (chunk2) => {
+      for (const char of chunk2) {
+        switch (char) {
+          case "\r":
+          case "\n":
+            cleanup();
+            resolve(value);
+            return;
+          case "":
+            cleanup();
+            reject(new Error("\u0412\u0432\u043E\u0434 \u043F\u0440\u0435\u0440\u0432\u0430\u043D"));
+            return;
+          case "\x7F":
+          // Backspace
+          case "\b":
+            value = value.slice(0, -1);
+            break;
+          default:
+            if (char >= " ") value += char;
+        }
+      }
+    };
+    stdin.on("data", onData);
+  });
+}
+var import_qrcode, colorEnabled, wrap, bold, dim, red, green, yellow, cyan;
+var init_term = __esm({
+  "src/ui/term.ts"() {
+    "use strict";
+    import_qrcode = __toESM(require_lib(), 1);
+    colorEnabled = () => process.stdout.isTTY === true && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+    wrap = (open2, close) => (text) => colorEnabled() ? `\x1B[${open2}m${text}\x1B[${close}m` : text;
+    bold = wrap("1", "22");
+    dim = wrap("2", "22");
+    red = wrap("31", "39");
+    green = wrap("32", "39");
+    yellow = wrap("33", "39");
+    cyan = wrap("36", "39");
   }
 });
 
@@ -21699,7 +21982,8 @@ var init_commands = __esm({
       { name: "volume", arg: "<0-130>", hint: "\u0433\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u044C", aliases: ["vol", "v"] },
       { name: "mute", hint: "\u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0438\u043B\u0438 \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0437\u0432\u0443\u043A" },
       { name: "back", hint: "\u0432\u0435\u0440\u043D\u0443\u0442\u044C\u0441\u044F \u0438\u0437 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438 \u043A \u0441\u043F\u0438\u0441\u043A\u0443", aliases: ["b", "\u043D\u0430\u0437\u0430\u0434"] },
-      { name: "login", hint: "\u0432\u043E\u0439\u0442\u0438 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442 (\u043F\u043E\u0434\u0441\u043A\u0430\u0436\u0435\u0442 \u043A\u043E\u043C\u0430\u043D\u0434\u0443 \u043E\u0431\u043E\u043B\u043E\u0447\u043A\u0438)" },
+      { name: "login", hint: "\u0432\u043E\u0439\u0442\u0438 \u0447\u0435\u0440\u0435\u0437 Telegram \u2014 QR \u043F\u0440\u044F\u043C\u043E \u0437\u0434\u0435\u0441\u044C", aliases: ["\u0432\u0445\u043E\u0434"] },
+      { name: "logout", hint: "\u0432\u044B\u0439\u0442\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430", aliases: ["\u0432\u044B\u0445\u043E\u0434"] },
       { name: "whoami", hint: "\u043A\u0442\u043E \u0432\u043E\u0448\u0451\u043B" },
       { name: "help", hint: "\u0441\u043F\u0440\u0430\u0432\u043A\u0430 \u043F\u043E \u043A\u043B\u0430\u0432\u0438\u0448\u0430\u043C", aliases: ["?"] },
       { name: "quit", hint: "\u0432\u044B\u0445\u043E\u0434", aliases: ["q", "exit"] }
@@ -21897,6 +22181,51 @@ var init_HelpOverlay = __esm({
   }
 });
 
+// src/tui/LoginOverlay.tsx
+function LoginOverlay({ phase, width: width2 }) {
+  const inner = Math.max(30, width2 - 6);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    Box_default,
+    {
+      flexDirection: "column",
+      borderStyle: "round",
+      borderColor: theme.accent,
+      paddingX: 2,
+      paddingY: 1,
+      width: width2,
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: theme.accent, children: "\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram" }),
+        phase.kind === "starting" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0413\u043E\u0442\u043E\u0432\u0438\u043C \u0441\u0441\u044B\u043B\u043A\u0443\u2026" }) }) : phase.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.danger, children: fit(phase.error, inner) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "Esc \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          phase.qr ? phase.qr.split("\n").map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: line }, index)) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u0422\u0435\u0440\u043C\u0438\u043D\u0430\u043B \u0443\u0437\u043A\u043E\u0432\u0430\u0442 \u0434\u043B\u044F QR \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443 \u0438\u043B\u0438 \u0440\u0430\u0441\u0442\u044F\u043D\u0438\u0442\u0435 \u043E\u043A\u043D\u043E" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "\u041E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 QR \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u043E\u043C \u0438\u043B\u0438 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0441\u044B\u043B\u043A\u0443:" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accent, children: fit(phase.url, inner) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+              "\u0417\u0430\u0442\u0435\u043C \u043D\u0430\u0436\u043C\u0438\u0442\u0435 Start \u0443 \u0431\u043E\u0442\u0430. \u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \xB7 ",
+              phase.secondsLeft,
+              " \u0441"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: "Esc \u2014 \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0432\u0445\u043E\u0434" })
+          ] })
+        ] })
+      ]
+    }
+  );
+}
+var import_react25, import_jsx_runtime4;
+var init_LoginOverlay = __esm({
+  async "src/tui/LoginOverlay.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react25 = __toESM(require_react(), 1);
+    init_theme();
+    import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+  }
+});
+
 // src/tui/ListPanel.tsx
 function windowFor(selected, count, height) {
   if (count <= height) return { from: 0, to: count };
@@ -21921,7 +22250,7 @@ function ListPanel({
   const widthOf = (column) => column.flex ? flexWidth : column.width;
   const { from, to } = windowFor(selected, rows.length, height);
   const visible = rows.slice(from, to);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -21930,17 +22259,17 @@ function ListPanel({
       paddingX: 1,
       flexGrow: 1,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
-          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
+          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.muted, children: [
             "  ",
             selected + 1,
             "/",
             rows.length
           ] }) : null
         ] }),
-        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.muted, children: [
             padTo(column.header, widthOf(column)),
             " "
           ] }, index)) }),
@@ -21948,7 +22277,7 @@ function ListPanel({
             const index = from + offset;
             const isSelected = index === selected;
             const isPlaying = index === playing;
-            return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               Text,
               {
                 color: isPlaying ? theme.playing : void 0,
@@ -21964,14 +22293,14 @@ function ListPanel({
     }
   );
 }
-var import_react25, import_jsx_runtime4;
+var import_react26, import_jsx_runtime5;
 var init_ListPanel = __esm({
   async "src/tui/ListPanel.tsx"() {
     "use strict";
     await init_build2();
-    import_react25 = __toESM(require_react(), 1);
+    import_react26 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -21995,40 +22324,40 @@ function PlayerBar({
   const meta = `${backend} \xB7 ${volume}%${live ? " \xB7 \u044D\u0444\u0438\u0440" : ""}`;
   const headWidth = Math.max(10, inner - clock.length - meta.length - 6);
   const barWidth = Math.max(0, inner - clock.length - meta.length - headWidth - 6);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: glyphColor, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: glyphColor, children: [
         glyph,
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
-      badge ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.paused, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
+      badge ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.paused, children: [
         " ",
         badge
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: "   " }),
-      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.accent, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: "   " }),
+      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.accent, children: [
         bar(position, total, barWidth),
         " "
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.muted, children: clock }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.muted, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: clock }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: theme.muted, children: [
         "  ",
         meta
       ] })
     ] }),
-    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
+    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
   ] });
 }
-var import_react26, import_jsx_runtime5;
+var import_react27, import_jsx_runtime6;
 var init_PlayerBar = __esm({
   async "src/tui/PlayerBar.tsx"() {
     "use strict";
     await init_build2();
-    import_react26 = __toESM(require_react(), 1);
+    import_react27 = __toESM(require_react(), 1);
     init_format();
     init_theme();
-    import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -22252,7 +22581,7 @@ function Sidebar({
   let lastGroup;
   const from = Math.min(Math.max(0, selectedIndex - Math.floor(height / 2)), Math.max(0, sections.length - height));
   const visible = sections.slice(from, from + height);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -22261,7 +22590,7 @@ function Sidebar({
       paddingX: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
         visible.map((section, offset) => {
           const index = from + offset;
           const isActive = section.id === activeId;
@@ -22269,9 +22598,9 @@ function Sidebar({
           const locked = section.needsAuth && !hasAuth;
           const groupChanged = section.group !== void 0 && section.group !== lastGroup;
           lastGroup = section.group;
-          return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_react27.default.Fragment, { children: [
-            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+          return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_react28.default.Fragment, { children: [
+            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
               Text,
               {
                 color: locked ? theme.muted : isActive ? theme.accent : void 0,
@@ -22289,22 +22618,22 @@ function Sidebar({
     }
   );
 }
-var import_react27, import_jsx_runtime6;
+var import_react28, import_jsx_runtime7;
 var init_Sidebar = __esm({
   async "src/tui/Sidebar.tsx"() {
     "use strict";
     await init_build2();
-    import_react27 = __toESM(require_react(), 1);
+    import_react28 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/usePlayer.ts
 function usePlayer(backend) {
-  const [status, setStatus] = (0, import_react28.useState)(backend?.status() ?? IDLE);
-  const pending = (0, import_react28.useRef)(null);
-  (0, import_react28.useEffect)(() => {
+  const [status, setStatus] = (0, import_react29.useState)(backend?.status() ?? IDLE);
+  const pending = (0, import_react29.useRef)(null);
+  (0, import_react29.useEffect)(() => {
     if (!backend) return;
     const flush = setInterval(() => {
       if (!pending.current) return;
@@ -22326,11 +22655,11 @@ function usePlayer(backend) {
   }, [backend]);
   return status;
 }
-var import_react28, IDLE, THROTTLE_MS;
+var import_react29, IDLE, THROTTLE_MS;
 var init_usePlayer = __esm({
   "src/tui/usePlayer.ts"() {
     "use strict";
-    import_react28 = __toESM(require_react(), 1);
+    import_react29 = __toESM(require_react(), 1);
     IDLE = { positionSec: null, durationSec: null, paused: false, idle: true };
     THROTTLE_MS = 250;
   }
@@ -22341,44 +22670,53 @@ var App_exports = {};
 __export(App_exports, {
   App: () => App2
 });
-function App2({ backend, backendName, accessToken, userId, onExit }) {
+function App2({
+  backend,
+  backendName,
+  accessToken: initialToken,
+  userId: initialUserId,
+  onExit
+}) {
+  const [accessToken, setAccessToken] = (0, import_react30.useState)(initialToken);
+  const [userId, setUserId] = (0, import_react30.useState)(initialUserId);
+  const [login, setLogin] = (0, import_react30.useState)(null);
   const { exit } = use_app_default();
   const { stdout } = use_stdout_default();
   const status = usePlayer(backend);
   const width2 = clampSize(stdout?.columns, 100, 40);
   const height = clampSize(stdout?.rows, 30, 12);
-  const [focus, setFocus] = (0, import_react29.useState)("list");
-  const [sectionIndex, setSectionIndex] = (0, import_react29.useState)(0);
-  const [activeSection, setActiveSection] = (0, import_react29.useState)("radio");
-  const [rowsBySection, setRows] = (0, import_react29.useState)({});
-  const [selectedBySection, setSelected] = (0, import_react29.useState)({});
-  const [loading, setLoading] = (0, import_react29.useState)(null);
-  const [message, setMessage] = (0, import_react29.useState)(null);
-  const [drill, setDrill] = (0, import_react29.useState)(null);
-  const [now, setNow] = (0, import_react29.useState)(null);
-  const [volume, setVolume] = (0, import_react29.useState)(100);
-  const [mutedFrom, setMutedFrom] = (0, import_react29.useState)(100);
-  const [showHelp, setShowHelp] = (0, import_react29.useState)(false);
-  const [radioNow, setRadioNow] = (0, import_react29.useState)(null);
-  const [streamUrl, setStreamUrl] = (0, import_react29.useState)(null);
-  const [tracklist, setTracklist] = (0, import_react29.useState)([]);
-  const [detailShow, setDetailShow] = (0, import_react29.useState)(null);
-  const [query, setQuery] = (0, import_react29.useState)("");
-  const [typing, setTyping] = (0, import_react29.useState)(false);
-  const [commandOpen, setCommandOpen] = (0, import_react29.useState)(false);
-  const [commandInput, setCommandInput] = (0, import_react29.useState)("");
-  const [commandHighlight, setCommandHighlight] = (0, import_react29.useState)(0);
-  const [commandError, setCommandError] = (0, import_react29.useState)(null);
+  const [focus, setFocus] = (0, import_react30.useState)("list");
+  const [sectionIndex, setSectionIndex] = (0, import_react30.useState)(0);
+  const [activeSection, setActiveSection] = (0, import_react30.useState)("radio");
+  const [rowsBySection, setRows] = (0, import_react30.useState)({});
+  const [selectedBySection, setSelected] = (0, import_react30.useState)({});
+  const [loading, setLoading] = (0, import_react30.useState)(null);
+  const [message, setMessage] = (0, import_react30.useState)(null);
+  const [drill, setDrill] = (0, import_react30.useState)(null);
+  const [now, setNow] = (0, import_react30.useState)(null);
+  const [volume, setVolume] = (0, import_react30.useState)(100);
+  const [mutedFrom, setMutedFrom] = (0, import_react30.useState)(100);
+  const [showHelp, setShowHelp] = (0, import_react30.useState)(false);
+  const [radioNow, setRadioNow] = (0, import_react30.useState)(null);
+  const [streamUrl, setStreamUrl] = (0, import_react30.useState)(null);
+  const [tracklist, setTracklist] = (0, import_react30.useState)([]);
+  const [detailShow, setDetailShow] = (0, import_react30.useState)(null);
+  const [query, setQuery] = (0, import_react30.useState)("");
+  const [typing, setTyping] = (0, import_react30.useState)(false);
+  const [commandOpen, setCommandOpen] = (0, import_react30.useState)(false);
+  const [commandInput, setCommandInput] = (0, import_react30.useState)("");
+  const [commandHighlight, setCommandHighlight] = (0, import_react30.useState)(0);
+  const [commandError, setCommandError] = (0, import_react30.useState)(null);
   const section = sectionById(activeSection);
   const sectionRows = rowsBySection[activeSection] ?? [];
   const rows = drill ? drill.rows : sectionRows;
   const selected = drill ? drill.selected : Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, sectionRows.length - 1));
-  const say = (0, import_react29.useCallback)((text) => setMessage(text), []);
-  const setSelectedFor = (0, import_react29.useCallback)(
+  const say = (0, import_react30.useCallback)((text) => setMessage(text), []);
+  const setSelectedFor = (0, import_react30.useCallback)(
     (id, value) => setSelected((previous) => ({ ...previous, [id]: value })),
     []
   );
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
     const spec = sectionById(activeSection);
     if (spec.needsAuth && !accessToken) return;
@@ -22395,7 +22733,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-  const playRadio = (0, import_react29.useCallback)(async () => {
+  const playRadio = (0, import_react30.useCallback)(async () => {
     const url = streamUrl;
     if (!url) return;
     try {
@@ -22414,7 +22752,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
     }
   }, [backend, streamUrl, say]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     void (async () => {
       const settings = await fetchStationSettings();
       const url = await resolveLiveStream(settings);
@@ -22435,7 +22773,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       }
     })();
   }, []);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     const refresh = async () => {
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
@@ -22453,7 +22791,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
     let channelId = null;
@@ -22471,7 +22809,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     if (activeSection !== "search") return;
     if (query.trim().length < 2) {
       setRows((previous) => ({ ...previous, search: [] }));
@@ -22483,7 +22821,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     return () => clearTimeout(timer);
   }, [query, activeSection, accessToken]);
   const selectedRow = rows[selected];
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     const show = asShow(activeSection, drill, selectedRow);
     if (!show) {
       setDetailShow(null);
@@ -22499,7 +22837,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       cancelled = true;
     };
   }, [activeSection, drill, selectedRow, accessToken]);
-  const playShow = (0, import_react29.useCallback)(
+  const playShow = (0, import_react30.useCallback)(
     async (show) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${show.title ?? "\u0432\u044B\u043F\u0443\u0441\u043A"}\xBB\u2026`);
       const stream = await fetchShowStream(show.id, accessToken).catch(() => null);
@@ -22526,7 +22864,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [backend, accessToken, say]
   );
-  const playById = (0, import_react29.useCallback)(
+  const playById = (0, import_react30.useCallback)(
     async (showId) => {
       const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
       if (show) await playShow(show);
@@ -22534,10 +22872,10 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [accessToken, playShow, say]
   );
-  const playStoreTrack = (0, import_react29.useCallback)(
+  const playStoreTrack = (0, import_react30.useCallback)(
     async (track) => {
       if (!accessToken) {
-        say("\u0422\u0440\u0435\u043A\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u0412\u044B\u0439\u0434\u0438\u0442\u0435 \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+        say("\u0422\u0440\u0435\u043A\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
         return;
       }
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${track.title ?? "\u0442\u0440\u0435\u043A"}\xBB\u2026`);
@@ -22567,7 +22905,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [accessToken, backend, say]
   );
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     const limit = now?.previewEndSec;
     if (!limit || status.positionSec === null) return;
     if (status.positionSec >= limit) {
@@ -22575,7 +22913,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
     }
   }, [now?.previewEndSec, status.positionSec, backend, say]);
-  const openDrill = (0, import_react29.useCallback)(
+  const openDrill = (0, import_react30.useCallback)(
     async (title, load) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${title}\xBB\u2026`);
       const loaded = await load().catch(() => []);
@@ -22589,7 +22927,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [say]
   );
-  const activate = (0, import_react29.useCallback)(async () => {
+  const activate = (0, import_react30.useCallback)(async () => {
     if (drill) {
       const row2 = drill.rows[drill.selected];
       if (!row2) return;
@@ -22649,7 +22987,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       case "releases": {
         const release = row;
         if (!accessToken) {
-          say("\u0422\u0440\u0435\u043A\u0438 \u0440\u0435\u043B\u0438\u0437\u043E\u0432 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u0412\u044B\u0439\u0434\u0438\u0442\u0435 \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+          say("\u0422\u0440\u0435\u043A\u0438 \u0440\u0435\u043B\u0438\u0437\u043E\u0432 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u041D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
           return;
         }
         return openDrill(
@@ -22694,7 +23032,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     openDrill,
     say
   ]);
-  const moveSelection = (0, import_react29.useCallback)(
+  const moveSelection = (0, import_react30.useCallback)(
     (delta) => {
       if (focus === "sidebar") {
         setSectionIndex((previous) => Math.min(SECTIONS2.length - 1, Math.max(0, previous + delta)));
@@ -22710,7 +23048,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [focus, drill, activeSection, sectionRows.length, selected, setSelectedFor]
   );
-  const openSection = (0, import_react29.useCallback)((index) => {
+  const openSection = (0, import_react30.useCallback)((index) => {
     const target = SECTIONS2[index];
     if (!target) return;
     setSectionIndex(index);
@@ -22719,15 +23057,70 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     setFocus("list");
     setTyping(target.id === "search");
   }, []);
-  const gotoSection = (0, import_react29.useCallback)(
+  const gotoSection = (0, import_react30.useCallback)(
     (id) => {
       const index = SECTIONS2.findIndex((candidate) => candidate.id === id);
       if (index >= 0) openSection(index);
     },
     [openSection]
   );
-  const suggestions = (0, import_react29.useMemo)(() => suggestCommands(commandInput), [commandInput]);
-  const runCommand = (0, import_react29.useCallback)(
+  const loginAbort = import_react30.default.useRef(null);
+  const startLogin = (0, import_react30.useCallback)(async () => {
+    setCommandOpen(false);
+    setLogin({ kind: "starting" });
+    let pending;
+    try {
+      pending = await startTelegramLogin();
+    } catch (error) {
+      setLogin({
+        kind: "failed",
+        error: error instanceof TelegramUnavailableError ? "\u0421\u0435\u0440\u0432\u0435\u0440 \u043F\u043E\u043A\u0430 \u043D\u0435 \u043F\u0443\u0441\u043A\u0430\u0435\u0442 CLI \u0432 telegram-\u0432\u0445\u043E\u0434. \u0417\u0430\u043F\u0430\u0441\u043D\u043E\u0439 \u043F\u0443\u0442\u044C: \u0432\u044B\u0439\u0442\u0438 (q) \u0438 `surprise login --email`" : error.message
+      });
+      return;
+    }
+    const qr = await renderQr(pending.url);
+    setLogin({
+      kind: "waiting",
+      url: pending.url,
+      qr,
+      secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1e3))
+    });
+    const abort = new AbortController();
+    loginAbort.current = abort;
+    const result = await waitForTelegramLogin(pending, {
+      signal: abort.signal,
+      onTick: (secondsLeft) => setLogin((previous) => previous?.kind === "waiting" ? { ...previous, secondsLeft } : previous)
+    });
+    loginAbort.current = null;
+    if (result.status === "ok") {
+      setAccessToken(result.session.access_token);
+      setUserId(result.session.user_id);
+      setLogin(null);
+      setRows((previous) => ({ radio: previous.radio }));
+      setSelected({});
+      setDrill(null);
+      const claims = parseJwt(result.session.access_token);
+      say(`\u0412\u043E\u0448\u043B\u0438${claims.email ? ` \xB7 ${claims.email}` : ""}`);
+      return;
+    }
+    if (result.status === "expired") {
+      setLogin({ kind: "failed", error: "\u0412\u0440\u0435\u043C\u044F \u043D\u0430 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u0432\u044B\u0448\u043B\u043E \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login \u0437\u0430\u043D\u043E\u0432\u043E" });
+      return;
+    }
+    setLogin({ kind: "failed", error: result.error });
+  }, [say]);
+  const doLogout = (0, import_react30.useCallback)(async () => {
+    await logout().catch(() => {
+    });
+    setAccessToken(null);
+    setUserId("");
+    setRows((previous) => ({ radio: previous.radio }));
+    setSelected({});
+    setDrill(null);
+    say("\u0412\u044B\u0448\u043B\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430");
+  }, [say]);
+  const suggestions = (0, import_react30.useMemo)(() => suggestCommands(commandInput), [commandInput]);
+  const runCommand = (0, import_react30.useCallback)(
     async (raw) => {
       const parsed = parseCommand(raw);
       if (!parsed) return setCommandOpen(false);
@@ -22776,9 +23169,11 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
           setDrill(null);
           return;
         case "login":
-          return say("\u0412\u044B\u0439\u0434\u0438\u0442\u0435 (q) \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+          return void startLogin();
+        case "logout":
+          return void doLogout();
         case "whoami":
-          return say(accessToken ? `\u0412\u044B \u0432\u043E\u0448\u043B\u0438 \xB7 ${userId}` : "\u0412\u044B \u043D\u0435 \u0432\u043E\u0448\u043B\u0438 \u2014 surprise login");
+          return say(accessToken ? `\u0412\u044B \u0432\u043E\u0448\u043B\u0438 \xB7 ${userId}` : "\u0412\u044B \u043D\u0435 \u0432\u043E\u0448\u043B\u0438 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login");
         case "help":
           return setShowHelp(true);
         case "quit":
@@ -22798,10 +23193,20 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       userId,
       say,
       onExit,
-      exit
+      exit,
+      startLogin,
+      doLogout
     ]
   );
   use_input_default((input, key) => {
+    if (login) {
+      if (key.escape) {
+        loginAbort.current?.abort();
+        loginAbort.current = null;
+        setLogin(null);
+      }
+      return;
+    }
     if (commandOpen) {
       if (key.escape) {
         setCommandOpen(false);
@@ -22822,24 +23227,33 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         return setCommandInput((value) => value.slice(0, -1));
       }
       if (input && !key.ctrl && !key.meta) {
+        const { text, submitted } = splitBurst(input);
         setCommandError(null);
         setCommandHighlight(0);
-        setCommandInput((value) => value + input);
+        const next = commandInput + text;
+        setCommandInput(next);
+        if (submitted) void runCommand(next);
       }
       return;
     }
     if (typing) {
       if (key.escape || key.return) return setTyping(false);
       if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
+      if (input && !key.ctrl && !key.meta) {
+        const { text, submitted } = splitBurst(input);
+        if (text) setQuery((value) => value + text);
+        if (submitted) setTyping(false);
+      }
       return;
     }
     if (showHelp) return setShowHelp(false);
-    if (input === "/" || input === ":") {
+    if (input.startsWith("/") || input.startsWith(":")) {
+      const { text, submitted } = splitBurst(input.slice(1));
       setCommandOpen(true);
-      setCommandInput("");
+      setCommandInput(text);
       setCommandHighlight(0);
       setCommandError(null);
+      if (submitted && text) void runCommand(text);
       return;
     }
     if (input === "q" || key.ctrl && input === "c") {
@@ -22916,7 +23330,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       });
     }
   });
-  const playingIndex = (0, import_react29.useMemo)(() => {
+  const playingIndex = (0, import_react30.useMemo)(() => {
     if (drill) {
       return drill.rows.findIndex((row) => row.kind === "show" && row.id === now?.showId);
     }
@@ -22930,7 +23344,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     if (activeSection === "likes") return sectionRows.findIndex((show) => show.id === now.showId);
     return -1;
   }, [drill, activeSection, sectionRows, radioNow, now?.showId]);
-  const details = (0, import_react29.useMemo)(() => {
+  const details = (0, import_react30.useMemo)(() => {
     if (!rows[selected]) return null;
     if (detailShow) {
       const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
@@ -22950,7 +23364,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     }
     return describeRow(activeSection, drill, rows[selected]);
   }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection, drill]);
-  const info = (0, import_react29.useMemo)(() => {
+  const info = (0, import_react30.useMemo)(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
@@ -22977,14 +23391,15 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     }
     return { title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442", subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
-  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(HelpOverlay, { width: width2 });
+  if (login) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(LoginOverlay, { phase: login, width: width2 });
+  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HelpOverlay, { width: width2 });
   const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
   const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6));
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
   const listTitle = drill ? `${drill.title} \u2014 Esc \u043D\u0430\u0437\u0430\u0434` : activeSection === "search" ? `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${section.listTitle} \u2014 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026` : activeSection === "radio" ? `${section.listTitle} \xB7 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438` : section.listTitle;
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         Sidebar,
         {
           sections: SECTIONS2.map((candidate, index) => ({
@@ -23001,8 +23416,8 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
           height: bodyHeight - 2
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           ListPanel,
           {
             title: listTitle,
@@ -23013,10 +23428,10 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
             height: listHeight,
             width: contentWidth,
             focused: focus === "list",
-            emptyHint: section.needsAuth && !accessToken ? "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434: surprise login" : section.emptyHint
+            emptyHint: section.needsAuth && !accessToken ? "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434 \u2014 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435 /login" : section.emptyHint
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           DetailsPanel,
           {
             details,
@@ -23027,7 +23442,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         )
       ] })
     ] }),
-    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
       CommandLine,
       {
         input: commandInput,
@@ -23037,7 +23452,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         error: commandError
       }
     ) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
       PlayerBar,
       {
         title: info.title,
@@ -23052,8 +23467,13 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         width: width2
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
   ] });
+}
+function splitBurst(input) {
+  const submitted = /[\r\n]/.test(input);
+  const text = input.replace(/[\r\n]/g, "").replace(/[\u0000-\u001F\u007F]/g, "");
+  return { text, submitted };
 }
 function clampSize(value, fallback, minimum) {
   return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
@@ -23163,17 +23583,20 @@ function describeRow(sectionId, drill, row) {
       return null;
   }
 }
-var import_react29, import_jsx_runtime7, SIDEBAR_WIDTH, DRILL_COLUMNS;
+var import_react30, import_jsx_runtime8, SIDEBAR_WIDTH, DRILL_COLUMNS;
 var init_App2 = __esm({
   async "src/tui/App.tsx"() {
     "use strict";
     await init_build2();
-    import_react29 = __toESM(require_react(), 1);
+    import_react30 = __toESM(require_react(), 1);
     init_radio();
     init_catalog();
     init_shows();
     init_library();
     init_store();
+    init_auth();
+    init_jwt();
+    init_term();
     init_config();
     init_format();
     init_ids();
@@ -23182,13 +23605,14 @@ var init_App2 = __esm({
     init_commands();
     await init_DetailsPanel();
     await init_HelpOverlay();
+    await init_LoginOverlay();
     await init_ListPanel();
     await init_PlayerBar();
     init_sections();
     await init_Sidebar();
     init_theme();
     init_usePlayer();
-    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
     SIDEBAR_WIDTH = 24;
     DRILL_COLUMNS = [
       { header: "", width: 6, value: (row) => row.kind === "track" ? "\u0442\u0440\u0435\u043A" : "\u0432\u044B\u043F\u0443\u0441\u043A" },
@@ -23202,274 +23626,8 @@ var init_App2 = __esm({
 // src/commands/library.ts
 init_library();
 init_format();
-
-// src/net/auth.ts
-init_config();
-init_http();
-
-// src/net/jwt.ts
-var EMPTY = { sub: null, exp: null, role: null, email: null };
-function decodeSegment(segment) {
-  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
-  const json = Buffer.from(base64, "base64").toString("utf8");
-  return JSON.parse(json);
-}
-function parseJwt(token) {
-  if (!token) return EMPTY;
-  const segment = token.split(".")[1];
-  if (!segment) return EMPTY;
-  let payload;
-  try {
-    payload = decodeSegment(segment);
-  } catch {
-    return EMPTY;
-  }
-  if (!payload || typeof payload !== "object") return EMPTY;
-  const p = payload;
-  return {
-    sub: typeof p.sub === "string" ? p.sub : null,
-    exp: typeof p.exp === "number" && Number.isFinite(p.exp) ? p.exp : null,
-    role: typeof p.role === "string" ? p.role : null,
-    email: typeof p.email === "string" ? p.email : null
-  };
-}
-function expiresAtFromToken(token) {
-  return parseJwt(token).exp ?? Math.floor(Date.now() / 1e3) + 3600;
-}
-function isExpired(expiresAt, marginSec, nowSec = Math.floor(Date.now() / 1e3)) {
-  return expiresAt - nowSec <= marginSec;
-}
-
-// src/net/auth.ts
-init_session();
-var REFRESH_MARGIN_SEC = 120;
-function toSession(tokens) {
-  return {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_at: expiresAtFromToken(tokens.access_token),
-    user_id: parseJwt(tokens.access_token).sub ?? ""
-  };
-}
-var TelegramUnavailableError = class extends Error {
-  constructor() {
-    super("\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u2014 \u0432\u043E\u0439\u0434\u0438\u0442\u0435 \u043F\u043E \u043F\u043E\u0447\u0442\u0435: surprise login --email");
-    this.name = "TelegramUnavailableError";
-  }
-};
-async function startTelegramLogin() {
-  const data = await callFunction("telegram-login-start", {
-    mode: "login",
-    platform: PLATFORM_HINT
-  });
-  if (data.method !== "bot" || !data.nonce || !data.poll_secret || !data.url) {
-    throw new TelegramUnavailableError();
-  }
-  return {
-    nonce: data.nonce,
-    pollSecret: data.poll_secret,
-    url: data.url,
-    expiresAt: Math.floor(Date.now() / 1e3) + (data.expires_in ?? 300)
-  };
-}
-async function pollTelegramLogin(pending) {
-  let data;
-  try {
-    data = await callFunction(
-      "telegram-login-poll",
-      { nonce: pending.nonce, poll_secret: pending.pollSecret },
-      { retries: 0 }
-    );
-  } catch (error) {
-    if (error instanceof NetworkError) return { status: "pending" };
-    if (error instanceof ApiError) {
-      const body = error.body;
-      if (body?.status === "failed") return { status: "failed", error: body.error ?? error.message };
-      return { status: "failed", error: error.message };
-    }
-    throw error;
-  }
-  if (data.status === "ok" && data.session) {
-    return { status: "ok", session: toSession(data.session), isNew: data.is_new === true };
-  }
-  if (data.status === "expired") return { status: "expired" };
-  if (data.status === "failed") return { status: "failed", error: data.error ?? "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0439\u0442\u0438" };
-  return { status: "pending" };
-}
-async function waitForTelegramLogin(pending, options = {}) {
-  let delayMs = 1500;
-  for (; ; ) {
-    if (options.signal?.aborted) return { status: "failed", error: "\u0412\u0445\u043E\u0434 \u043E\u0442\u043C\u0435\u043D\u0451\u043D" };
-    const secondsLeft = pending.expiresAt - Math.floor(Date.now() / 1e3);
-    if (secondsLeft <= 0) return { status: "expired" };
-    options.onTick?.(secondsLeft);
-    const result = await pollTelegramLogin(pending);
-    if (result.status !== "pending") {
-      if (result.status === "ok") await persist(result.session);
-      return result;
-    }
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    delayMs = Math.min(delayMs + 500, 4e3);
-  }
-}
-async function loginWithPassword(email, password) {
-  const data = await request(authUrl("token?grant_type=password"), {
-    method: "POST",
-    headers: anonHeaders(),
-    body: { email, password },
-    retries: 0
-  });
-  if (!data?.access_token || !data.refresh_token) {
-    throw new Error("\u0421\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u0432\u0435\u0440\u043D\u0443\u043B \u0442\u043E\u043A\u0435\u043D\u044B \u2014 \u043F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437");
-  }
-  const session = toSession({ access_token: data.access_token, refresh_token: data.refresh_token });
-  await persist(session);
-  return session;
-}
-async function persist(session) {
-  await withSessionLock(() => writeSession(session));
-}
-var refreshInFlight = null;
-function refreshOnce(stale) {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = withSessionLock(async () => {
-    const current = await readSession() ?? stale;
-    if (!isExpired(current.expires_at, REFRESH_MARGIN_SEC)) return current;
-    try {
-      const data = await request(authUrl("token?grant_type=refresh_token"), {
-        method: "POST",
-        headers: anonHeaders(),
-        body: { refresh_token: current.refresh_token },
-        retries: 0
-      });
-      if (!data?.access_token || !data.refresh_token) {
-        await clearSession();
-        return null;
-      }
-      const next = toSession({ access_token: data.access_token, refresh_token: data.refresh_token });
-      await writeSession(next);
-      return next;
-    } catch (error) {
-      if (error instanceof ApiError) {
-        await clearSession();
-        return null;
-      }
-      return current;
-    }
-  }).finally(() => {
-    refreshInFlight = null;
-  });
-  return refreshInFlight;
-}
-async function getValidSession() {
-  const session = await readSession();
-  if (!session) return null;
-  if (!isExpired(session.expires_at, REFRESH_MARGIN_SEC)) return session;
-  return refreshOnce(session);
-}
-async function logout() {
-  const session = await readSession();
-  await withSessionLock(() => clearSession());
-  if (!session) return;
-  await request(authUrl("logout"), {
-    method: "POST",
-    headers: { ...anonHeaders(), Authorization: `Bearer ${session.access_token}` },
-    retries: 0
-  }).catch(() => {
-  });
-}
-
-// src/ui/term.ts
-var import_qrcode = __toESM(require_lib(), 1);
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline/promises";
-var colorEnabled = () => process.stdout.isTTY === true && !process.env.NO_COLOR && process.env.TERM !== "dumb";
-var wrap = (open2, close) => (text) => colorEnabled() ? `\x1B[${open2}m${text}\x1B[${close}m` : text;
-var bold = wrap("1", "22");
-var dim = wrap("2", "22");
-var red = wrap("31", "39");
-var green = wrap("32", "39");
-var yellow = wrap("33", "39");
-var cyan = wrap("36", "39");
-function terminalWidth() {
-  return process.stdout.columns ?? 80;
-}
-function visibleWidth(line) {
-  return [...line.replace(/\u001B\[[0-9;]*m/g, "")].length;
-}
-async function renderQr(text) {
-  let rendered;
-  try {
-    rendered = await import_qrcode.default.toString(text, { type: "terminal", small: true, margin: 1 });
-  } catch {
-    return null;
-  }
-  const widest = rendered.split("\n").reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
-  return widest > terminalWidth() ? null : rendered.replace(/\n+$/, "");
-}
-function openUrl(url) {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  try {
-    const child = spawn(command, [url], { stdio: "ignore", detached: true });
-    child.on("error", () => {
-    });
-    child.unref();
-  } catch {
-  }
-}
-function isInteractive() {
-  return process.stdin.isTTY === true && process.stdout.isTTY === true;
-}
-async function promptLine(question) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return (await rl.question(question)).trim();
-  } finally {
-    rl.close();
-  }
-}
-async function promptHidden(question) {
-  const { stdin, stdout } = process;
-  stdout.write(question);
-  const wasRaw = stdin.isRaw === true;
-  if (stdin.isTTY) stdin.setRawMode(true);
-  stdin.resume();
-  stdin.setEncoding("utf8");
-  return new Promise((resolve, reject) => {
-    let value = "";
-    const cleanup = () => {
-      stdin.removeListener("data", onData);
-      if (stdin.isTTY) stdin.setRawMode(wasRaw);
-      stdin.pause();
-      stdout.write("\n");
-    };
-    const onData = (chunk2) => {
-      for (const char of chunk2) {
-        switch (char) {
-          case "\r":
-          case "\n":
-            cleanup();
-            resolve(value);
-            return;
-          case "":
-            cleanup();
-            reject(new Error("\u0412\u0432\u043E\u0434 \u043F\u0440\u0435\u0440\u0432\u0430\u043D"));
-            return;
-          case "\x7F":
-          // Backspace
-          case "\b":
-            value = value.slice(0, -1);
-            break;
-          default:
-            if (char >= " ") value += char;
-        }
-      }
-    };
-    stdin.on("data", onData);
-  });
-}
-
-// src/commands/library.ts
+init_auth();
+init_term();
 var SECTIONS = ["playlists", "likes", "finds", "saved", "following"];
 var SECTION_TITLES = {
   playlists: "\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B",
@@ -23701,6 +23859,9 @@ async function playlistCommand(argv) {
   return 0;
 }
 
+// src/commands/login.ts
+init_auth();
+
 // src/api/profile.ts
 init_http();
 async function fetchProfile(accessToken, userId) {
@@ -23741,6 +23902,7 @@ function profileLabel(profile, userId) {
 }
 
 // src/commands/login.ts
+init_term();
 async function announce(accessToken, userId) {
   const profile = await fetchProfile(accessToken, userId).catch(() => null);
   const supporter = await isSupporter(accessToken, userId);
@@ -23842,6 +24004,7 @@ init_shows();
 init_store();
 init_format();
 init_publicId();
+init_auth();
 
 // src/player/detect.ts
 import { execFile } from "node:child_process";
@@ -24483,6 +24646,7 @@ init_format();
 init_ids();
 
 // src/ui/playback.ts
+init_term();
 var STATUS_INTERVAL_MS = 1e3;
 function startPlayback(options) {
   const { backend } = options;
@@ -24571,6 +24735,7 @@ function stateMark(state) {
 }
 
 // src/commands/track.ts
+init_term();
 function trackLabel(track) {
   const artist = track.artist_name?.trim();
   const title = track.title?.trim() || "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F";
@@ -24717,6 +24882,7 @@ async function playTrack(track, accessToken) {
 }
 
 // src/commands/play.ts
+init_term();
 function showTitle(show) {
   const artists = show.artists.map((artist) => artist.name).join(", ");
   const title = show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F";
@@ -24897,6 +25063,8 @@ init_radio();
 init_config();
 init_format();
 init_ids();
+init_auth();
+init_term();
 async function radioCommand(argv) {
   const asJson = argv.includes("--json");
   const settings = await fetchStationSettings();
@@ -24988,6 +25156,8 @@ async function radioCommand(argv) {
 }
 
 // src/commands/tui.ts
+init_auth();
+init_term();
 async function tuiCommand() {
   if (!isInteractive()) {
     process.stderr.write(
@@ -25017,14 +25187,14 @@ async function tuiCommand() {
     );
   }
   const session = await getValidSession();
-  const [{ render: render2 }, React17, { App: App3 }] = await Promise.all([
+  const [{ render: render2 }, React18, { App: App3 }] = await Promise.all([
     init_build2().then(() => build_exports),
     Promise.resolve().then(() => __toESM(require_react(), 1)),
     init_App2().then(() => App_exports)
   ]);
   await backend.start();
   const instance = render2(
-    React17.createElement(App3, {
+    React18.createElement(App3, {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,
@@ -25045,6 +25215,8 @@ async function tuiCommand() {
 }
 
 // src/commands/session.ts
+init_auth();
+init_term();
 async function whoamiCommand(argv) {
   const asJson = argv.includes("--json");
   const session = await getValidSession();
@@ -25085,6 +25257,7 @@ async function logoutCommand() {
 
 // src/index.ts
 init_config();
+init_term();
 var USAGE = `${bold("surprise")} \u2014 SURPRISE.FM \u0432 \u0442\u0435\u0440\u043C\u0438\u043D\u0430\u043B\u0435
 
 ${bold("\u041A\u043E\u043C\u0430\u043D\u0434\u044B")}
