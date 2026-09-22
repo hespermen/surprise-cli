@@ -5145,6 +5145,141 @@ var init_shows = __esm({
   }
 });
 
+// src/lib/previewWindow.ts
+function previewWindow(track) {
+  const total = positiveInt(track.duration);
+  const wanted = positiveInt(track.preview_duration_sec) ?? PREVIEW_FALLBACK_SEC;
+  if (total === null) return { startSec: 0, durationSec: wanted, endSec: wanted };
+  if (total <= wanted) return { startSec: 0, durationSec: total, endSec: total };
+  const explicit = positiveInt(track.preview_start_sec);
+  const desired = explicit ?? Math.floor(total * PREVIEW_START_RATIO);
+  const startSec = Math.max(0, Math.min(desired, total - wanted));
+  return { startSec, durationSec: wanted, endSec: startSec + wanted };
+}
+var PREVIEW_FALLBACK_SEC, PREVIEW_START_RATIO, positiveInt;
+var init_previewWindow = __esm({
+  "src/lib/previewWindow.ts"() {
+    "use strict";
+    PREVIEW_FALLBACK_SEC = 30;
+    PREVIEW_START_RATIO = 0.25;
+    positiveInt = (value) => {
+      const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : Number.NaN;
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+  }
+});
+
+// src/api/store.ts
+function toTrack(row) {
+  const { releases, ...rest } = row;
+  return { ...rest, releaseTitle: releases?.title ?? null };
+}
+async function fetchTrack(trackId, accessToken = null) {
+  const params = new URLSearchParams({ select: TRACK_SELECT, id: `eq.${trackId}`, limit: "1" });
+  const rows = await request(restUrl(`store_tracks?${params}`), {
+    headers: accessToken ? authHeaders(accessToken) : anonHeaders()
+  });
+  const row = rows?.[0];
+  return row ? toTrack(row) : null;
+}
+async function listReleaseTracks(releaseId, accessToken = null) {
+  const params = new URLSearchParams({
+    select: TRACK_SELECT,
+    release_id: `eq.${releaseId}`,
+    order: "position.asc.nullslast"
+  });
+  const rows = await request(restUrl(`store_tracks?${params}`), {
+    headers: accessToken ? authHeaders(accessToken) : anonHeaders()
+  });
+  return (rows ?? []).map(toTrack);
+}
+function needsReresolve(access, nowSec = Math.floor(Date.now() / 1e3)) {
+  return nowSec - access.issuedAt >= RERESOLVE_AFTER_SEC;
+}
+function explainDenial(reason, fallback) {
+  switch (reason) {
+    case "limit_reached":
+      return "\u0411\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u043F\u0440\u043E\u0441\u043B\u0443\u0448\u0438\u0432\u0430\u043D\u0438\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u0440\u0435\u043A\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.";
+    case "not_released":
+      return "\u0420\u0435\u043B\u0438\u0437 \u0435\u0449\u0451 \u043D\u0435 \u0432\u044B\u0448\u0435\u043B.";
+    case "no_owner":
+    case "track_not_found":
+      return "\u0422\u0440\u0435\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0438\u043B\u0438 \u0441\u043D\u044F\u0442 \u0441 \u043F\u0440\u043E\u0434\u0430\u0436\u0438.";
+    default:
+      return fallback;
+  }
+}
+async function resolveTrackAccess(track, listenerId, accessToken) {
+  const issuedAt = Math.floor(Date.now() / 1e3);
+  try {
+    const data = await callFunction(
+      "store-stream",
+      { track_id: track.id, session_id: listenerId },
+      { accessToken, retries: 0 }
+    );
+    if (data.url) {
+      return {
+        kind: data.free_listen === true ? "free_listen" : "full",
+        url: data.url,
+        isHls: data.hls === true,
+        playsLeft: typeof data.plays_left === "number" ? data.plays_left : null,
+        issuedAt,
+        window: null
+      };
+    }
+    throw new TrackAccessDeniedError(data.reason, data.error ?? "\u0414\u043E\u0441\u0442\u0443\u043F \u043A \u0442\u0440\u0435\u043A\u0443 \u043D\u0435 \u0432\u044B\u0434\u0430\u043D");
+  } catch (error) {
+    if (error instanceof TrackAccessDeniedError) throw error;
+    if (error instanceof ApiError && error.status === 403) {
+      const body = error.body ?? {};
+      const denial = new TrackAccessDeniedError(body.reason, body.error ?? error.message);
+      const preview = await fetchPreviewUrls([track.id], accessToken).catch(() => /* @__PURE__ */ new Map());
+      const url = preview.get(track.id);
+      if (!url) throw denial;
+      return {
+        kind: "preview",
+        url,
+        isHls: false,
+        playsLeft: typeof body.plays_left === "number" ? body.plays_left : 0,
+        issuedAt,
+        window: previewWindow(track)
+      };
+    }
+    throw error;
+  }
+}
+async function fetchPreviewUrls(trackIds, accessToken) {
+  const urls = /* @__PURE__ */ new Map();
+  if (trackIds.length === 0) return urls;
+  for (const part of chunk(trackIds, 50)) {
+    const data = await callFunction(
+      "preview-stream",
+      { track_ids: part },
+      { accessToken, retries: 1 }
+    );
+    for (const [id, url] of Object.entries(data.urls ?? {})) urls.set(id, url);
+  }
+  return urls;
+}
+var TRACK_SELECT, RERESOLVE_AFTER_SEC, TrackAccessDeniedError;
+var init_store = __esm({
+  "src/api/store.ts"() {
+    "use strict";
+    init_http();
+    init_previewWindow();
+    TRACK_SELECT = "id,title,artist_name,duration,position,release_id,preview_start_sec,preview_duration_sec,releases(title)";
+    RERESOLVE_AFTER_SEC = 600;
+    TrackAccessDeniedError = class extends Error {
+      reason;
+      constructor(reason, fallback) {
+        super(explainDenial(reason, fallback));
+        this.name = "TrackAccessDeniedError";
+        this.reason = reason;
+      }
+    };
+  }
+});
+
 // src/lib/publicId.ts
 function parseEntityParam(param) {
   const isNumeric = !!param && /^\d+$/.test(param);
@@ -21343,20 +21478,22 @@ async function listArtists(options = {}) {
   const params = new URLSearchParams({
     select: "id,public_id,slug,name,bio,is_resident",
     is_active: "eq.true",
-    order: "is_resident.desc.nullslast,name.asc",
+    order: "name.asc",
     limit: String(options.limit ?? 200)
   });
+  if (options.residentsOnly !== false) params.append("is_resident", "eq.true");
   const rows = await request(restUrl(`artists?${params}`), {
     headers: headers2(options.accessToken ?? null)
   });
   return rows ?? [];
 }
-async function listHosts(accessToken = null, limit = 200) {
+async function listHosts(accessToken = null, limit = 200, verifiedOnly = true) {
   const params = new URLSearchParams({
     select: "id,slug,name,bio,is_verified",
     order: "name.asc",
     limit: String(limit)
   });
+  if (verifiedOnly) params.append("is_verified", "eq.true");
   const rows = await request(restUrl(`hosts?${params}`), {
     headers: headers2(accessToken)
   });
@@ -21391,6 +21528,19 @@ async function showsByArtist(artistId, accessToken = null, limit = 50) {
   return (rows ?? []).map((row) => row.shows_v2).filter(
     (show) => show !== null && show.status !== "archived"
   ).map(({ id, title, duration }) => ({ id, title, duration }));
+}
+async function showsByHost(hostId, accessToken = null, limit = 100) {
+  const params = new URLSearchParams({
+    select: "id,title,duration,published_at",
+    host_id: `eq.${hostId}`,
+    status: "eq.published",
+    order: "published_at.desc.nullslast",
+    limit: String(limit)
+  });
+  const rows = await request(restUrl(`shows_v2?${params}`), {
+    headers: headers2(accessToken)
+  });
+  return rows ?? [];
 }
 var init_catalog = __esm({
   "src/api/catalog.ts"() {
@@ -21472,6 +21622,122 @@ var require_jsx_runtime = __commonJS({
   }
 });
 
+// src/tui/CommandLine.tsx
+function CommandLine({
+  input,
+  suggestions,
+  highlighted,
+  width: width2,
+  error
+}) {
+  const inner = Math.max(24, width2 - 4);
+  const visible = suggestions.slice(0, 8);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.accent, paddingX: 1, width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.accent, bold: true, children: "/" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { children: fit(input.replace(/^\//, ""), inner - 3) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.accent, children: "\u258C" })
+    ] }),
+    error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.danger, children: fit(error, inner) }) : visible.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: "\u0422\u0430\u043A\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u043D\u0435\u0442 \u2014 Esc, \u0447\u0442\u043E\u0431\u044B \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) : visible.map((command, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+      Text,
+      {
+        color: index === highlighted ? theme.accent : theme.muted,
+        bold: index === highlighted,
+        backgroundColor: index === highlighted ? theme.selectionBg : void 0,
+        children: [
+          padTo(`/${command.name}${command.arg ? ` ${command.arg}` : ""}`, 22),
+          fit(command.hint, inner - 23)
+        ]
+      }
+    ) }, command.name)),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: "Tab \u2014 \u043F\u043E\u0434\u0441\u0442\u0430\u0432\u0438\u0442\u044C \xB7 Enter \u2014 \u0432\u044B\u043F\u043E\u043B\u043D\u0438\u0442\u044C \xB7 Esc \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" })
+  ] });
+}
+var import_react22, import_jsx_runtime;
+var init_CommandLine = __esm({
+  async "src/tui/CommandLine.tsx"() {
+    "use strict";
+    await init_build2();
+    import_react22 = __toESM(require_react(), 1);
+    init_theme();
+    import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+  }
+});
+
+// src/tui/commands.ts
+function parseCommand(input) {
+  const text = input.trim().replace(/^\//, "");
+  if (!text) return null;
+  const space = text.indexOf(" ");
+  return space === -1 ? { name: text.toLowerCase(), argument: "" } : { name: text.slice(0, space).toLowerCase(), argument: text.slice(space + 1).trim() };
+}
+function resolveCommand(name) {
+  const lowered = name.toLowerCase();
+  return COMMANDS.find((command) => command.name === lowered || command.aliases?.includes(lowered)) ?? null;
+}
+function suggestCommands(input) {
+  const parsed = parseCommand(input);
+  if (!parsed) return [...COMMANDS];
+  if (input.includes(" ")) {
+    const exact = resolveCommand(parsed.name);
+    return exact ? [exact] : [];
+  }
+  return COMMANDS.filter(
+    (command) => command.name.startsWith(parsed.name) || command.aliases?.some((alias) => alias.startsWith(parsed.name))
+  );
+}
+var COMMANDS, SECTION_ALIASES;
+var init_commands = __esm({
+  "src/tui/commands.ts"() {
+    "use strict";
+    COMMANDS = [
+      { name: "radio", hint: "\u0432\u0435\u0440\u043D\u0443\u0442\u044C\u0441\u044F \u0432 \u0436\u0438\u0432\u043E\u0439 \u044D\u0444\u0438\u0440", aliases: ["live", "\u044D\u0444\u0438\u0440"] },
+      { name: "play", hint: "\u0438\u0433\u0440\u0430\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435" },
+      { name: "pause", hint: "\u043F\u0430\u0443\u0437\u0430 \u0438 \u0441\u043D\u044F\u0442\u0438\u0435 \u0441 \u043F\u0430\u0443\u0437\u044B", aliases: ["p"] },
+      { name: "search", arg: "<\u0437\u0430\u043F\u0440\u043E\u0441>", hint: "\u0438\u0441\u043A\u0430\u0442\u044C \u0432\u044B\u043F\u0443\u0441\u043A\u0438", aliases: ["s", "\u043D\u0430\u0439\u0442\u0438"] },
+      { name: "goto", arg: "<\u0440\u0430\u0437\u0434\u0435\u043B>", hint: "\u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u0432 \u0440\u0430\u0437\u0434\u0435\u043B \u043F\u043E \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E", aliases: ["g", "\u043E\u0442\u043A\u0440\u044B\u0442\u044C"] },
+      { name: "volume", arg: "<0-130>", hint: "\u0433\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u044C", aliases: ["vol", "v"] },
+      { name: "mute", hint: "\u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0438\u043B\u0438 \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0437\u0432\u0443\u043A" },
+      { name: "back", hint: "\u0432\u0435\u0440\u043D\u0443\u0442\u044C\u0441\u044F \u0438\u0437 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438 \u043A \u0441\u043F\u0438\u0441\u043A\u0443", aliases: ["b", "\u043D\u0430\u0437\u0430\u0434"] },
+      { name: "login", hint: "\u0432\u043E\u0439\u0442\u0438 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442 (\u043F\u043E\u0434\u0441\u043A\u0430\u0436\u0435\u0442 \u043A\u043E\u043C\u0430\u043D\u0434\u0443 \u043E\u0431\u043E\u043B\u043E\u0447\u043A\u0438)" },
+      { name: "whoami", hint: "\u043A\u0442\u043E \u0432\u043E\u0448\u0451\u043B" },
+      { name: "help", hint: "\u0441\u043F\u0440\u0430\u0432\u043A\u0430 \u043F\u043E \u043A\u043B\u0430\u0432\u0438\u0448\u0430\u043C", aliases: ["?"] },
+      { name: "quit", hint: "\u0432\u044B\u0445\u043E\u0434", aliases: ["q", "exit"] }
+    ];
+    SECTION_ALIASES = {
+      \u044D\u0444\u0438\u0440: "radio",
+      \u0440\u0430\u0434\u0438\u043E: "radio",
+      radio: "radio",
+      \u043D\u043E\u0432\u043E\u0435: "shows",
+      \u0432\u044B\u043F\u0443\u0441\u043A\u0438: "shows",
+      shows: "shows",
+      \u0440\u0435\u0437\u0438\u0434\u0435\u043D\u0442\u044B: "artists",
+      \u0430\u0440\u0442\u0438\u0441\u0442\u044B: "artists",
+      artists: "artists",
+      \u0430\u0432\u0442\u043E\u0440\u044B: "hosts",
+      hosts: "hosts",
+      \u043C\u0443\u0437\u044B\u043A\u0430: "releases",
+      \u0440\u0435\u043B\u0438\u0437\u044B: "releases",
+      releases: "releases",
+      \u043A\u043E\u043B\u043B\u0435\u043A\u0446\u0438\u044F: "playlists",
+      \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B: "playlists",
+      playlists: "playlists",
+      \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435: "likes",
+      \u043B\u0430\u0439\u043A\u0438: "likes",
+      likes: "likes",
+      \u043D\u0430\u0445\u043E\u0434\u043A\u0438: "finds",
+      finds: "finds",
+      \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435: "saved",
+      \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043D\u043E\u0435: "saved",
+      saved: "saved",
+      \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438: "following",
+      following: "following",
+      \u043F\u043E\u0438\u0441\u043A: "search",
+      search: "search"
+    };
+  }
+});
+
 // src/tui/DetailsPanel.tsx
 function wrap2(text, width2, maxLines) {
   const words = text.replace(/\s+/g, " ").trim().split(" ");
@@ -21503,7 +21769,7 @@ function DetailsPanel({
   height
 }) {
   const inner = Math.max(16, width2 - 4);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
     Box_default,
     {
       flexDirection: "column",
@@ -21512,21 +21778,21 @@ function DetailsPanel({
       paddingX: 1,
       width: width2,
       flexGrow: 1,
-      children: !details ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0447\u0442\u043E-\u043D\u0438\u0431\u0443\u0434\u044C \u0432 \u0441\u043F\u0438\u0441\u043A\u0435" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { bold: true, children: fit(details.title, inner) }),
-        details.subtitle ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.accentDim, children: fit(details.subtitle, inner) }) : null,
-        details.facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: details.facts.map(([label, value]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.muted, children: [
+      children: !details ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0447\u0442\u043E-\u043D\u0438\u0431\u0443\u0434\u044C \u0432 \u0441\u043F\u0438\u0441\u043A\u0435" }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, children: fit(details.title, inner) }),
+        details.subtitle ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.accentDim, children: fit(details.subtitle, inner) }) : null,
+        details.facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: details.facts.map(([label, value]) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: theme.muted, children: [
           padTo(label, 13),
           " ",
           fit(value, inner - 14)
         ] }, label)) }) : null,
-        details.description ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: wrap2(details.description, inner, 3).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { color: theme.muted, children: line }, index)) }) : null,
-        details.tracklist.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { color: theme.accent, children: [
+        details.description ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, flexDirection: "column", children: wrap2(details.description, inner, 3).map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: line }, index)) }) : null,
+        details.tracklist.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Text, { color: theme.accent, children: [
             "\u0422\u0440\u0435\u043A\u043B\u0438\u0441\u0442 \xB7 ",
             details.tracklist.length
           ] }),
-          visibleTracks(details, Math.max(1, height - 12)).map(({ item, index }) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          visibleTracks(details, Math.max(1, height - 12)).map(({ item, index }) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
             Text,
             {
               color: index === details.playingTrack ? theme.playing : theme.muted,
@@ -21550,21 +21816,21 @@ function visibleTracks(details, count) {
   const from = Math.min(Math.max(0, anchor - 1), Math.max(0, items.length - count));
   return items.slice(from, from + count).map((item, offset) => ({ item, index: from + offset }));
 }
-var import_react22, import_jsx_runtime;
+var import_react23, import_jsx_runtime2;
 var init_DetailsPanel = __esm({
   async "src/tui/DetailsPanel.tsx"() {
     "use strict";
     await init_build2();
-    import_react22 = __toESM(require_react(), 1);
+    import_react23 = __toESM(require_react(), 1);
     init_format();
     init_theme();
-    import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/HelpOverlay.tsx
 function HelpOverlay({ width: width2 }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -21574,27 +21840,27 @@ function HelpOverlay({ width: width2 }) {
       paddingY: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: theme.accent, children: "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435" }),
-        GROUPS.map((group) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { bold: true, color: theme.accentDim, children: group.title }),
-          group.rows.map(([keys, what]) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Box_default, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.accent, children: keys.padEnd(18) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: what })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: theme.accent, children: "\u0423\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435" }),
+        GROUPS.map((group) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: theme.accentDim, children: group.title }),
+          group.rows.map(([keys, what]) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.accent, children: keys.padEnd(18) }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.muted, children: what })
           ] }, keys))
         ] }, group.title)),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Text, { color: theme.muted, children: "\u041B\u044E\u0431\u0430\u044F \u043A\u043B\u0430\u0432\u0438\u0448\u0430 \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.muted, children: "\u041B\u044E\u0431\u0430\u044F \u043A\u043B\u0430\u0432\u0438\u0448\u0430 \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C" }) })
       ]
     }
   );
 }
-var import_react23, import_jsx_runtime2, GROUPS;
+var import_react24, import_jsx_runtime3, GROUPS;
 var init_HelpOverlay = __esm({
   async "src/tui/HelpOverlay.tsx"() {
     "use strict";
     await init_build2();
-    import_react23 = __toESM(require_react(), 1);
+    import_react24 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
     GROUPS = [
       {
         title: "\u041D\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044F",
@@ -21655,7 +21921,7 @@ function ListPanel({
   const widthOf = (column) => column.flex ? flexWidth : column.width;
   const { from, to } = windowFor(selected, rows.length, height);
   const visible = rows.slice(from, to);
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -21664,17 +21930,17 @@ function ListPanel({
       paddingX: 1,
       flexGrow: 1,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
-          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: theme.muted, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: fit(title, inner - 12) }),
+          rows.length > height ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
             "  ",
             selected + 1,
             "/",
             rows.length
           ] }) : null
         ] }),
-        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Text, { color: theme.muted, children: [
+        rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: fit(emptyHint, inner) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { children: columns.map((column, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
             padTo(column.header, widthOf(column)),
             " "
           ] }, index)) }),
@@ -21682,7 +21948,7 @@ function ListPanel({
             const index = from + offset;
             const isSelected = index === selected;
             const isPlaying = index === playing;
-            return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               Text,
               {
                 color: isPlaying ? theme.playing : void 0,
@@ -21698,14 +21964,14 @@ function ListPanel({
     }
   );
 }
-var import_react24, import_jsx_runtime3;
+var import_react25, import_jsx_runtime4;
 var init_ListPanel = __esm({
   async "src/tui/ListPanel.tsx"() {
     "use strict";
     await init_build2();
-    import_react24 = __toESM(require_react(), 1);
+    import_react25 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime3 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -21729,40 +21995,40 @@ function PlayerBar({
   const meta = `${backend} \xB7 ${volume}%${live ? " \xB7 \u044D\u0444\u0438\u0440" : ""}`;
   const headWidth = Math.max(10, inner - clock.length - meta.length - 6);
   const barWidth = Math.max(0, inner - clock.length - meta.length - headWidth - 6);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: glyphColor, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: theme.border, paddingX: 1, width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: glyphColor, children: [
         glyph,
         " "
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
-      badge ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.paused, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: fit(title, headWidth) }),
+      badge ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.paused, children: [
         " ",
         badge
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "   " }),
-      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.accent, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: "   " }),
+      !live && barWidth > 4 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.accent, children: [
         bar(position, total, barWidth),
         " "
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.muted, children: clock }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: theme.muted, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.muted, children: clock }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: theme.muted, children: [
         "  ",
         meta
       ] })
     ] }),
-    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
+    subtitle ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.accentDim, children: fit(subtitle, inner) }) : null
   ] });
 }
-var import_react25, import_jsx_runtime4;
+var import_react26, import_jsx_runtime5;
 var init_PlayerBar = __esm({
   async "src/tui/PlayerBar.tsx"() {
     "use strict";
     await init_build2();
-    import_react25 = __toESM(require_react(), 1);
+    import_react26 = __toESM(require_react(), 1);
     init_format();
     init_theme();
-    import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
@@ -21779,6 +22045,7 @@ var init_sections = __esm({
     init_catalog();
     init_library();
     init_shows();
+    init_radio();
     init_format();
     dash = (value) => value && value.trim() ? value : "\u2014";
     SECTIONS2 = [
@@ -21786,11 +22053,13 @@ var init_sections = __esm({
         id: "radio",
         label: "\u042D\u0444\u0438\u0440",
         group: "station",
-        listTitle: "\u042D\u0444\u0438\u0440 \u2014 \u0447\u0442\u043E \u0438\u0433\u0440\u0430\u0435\u0442 \u0438 \u0447\u0442\u043E \u0438\u0433\u0440\u0430\u043B\u043E",
+        listTitle: "\u042D\u0444\u0438\u0440 \u2014 \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435",
         emptyHint: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E",
         columns: [
-          { header: "", width: 6, value: () => "" },
-          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (item) => item.title ?? "\u2014" },
+          // Расписание информационное: по нему не запускают, поэтому колонка «когда»
+          // важнее любой кнопки — она отвечает на единственный вопрос к этому списку.
+          { header: "\u041A\u043E\u0433\u0434\u0430", width: 7, value: (item) => item.when ?? "" },
+          { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (item) => formatRadioItem(item) },
           { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (item) => formatDuration(item.duration) }
         ],
         // Эфир грузится в App отдельно: он обновляется по таймеру и нужен ещё и
@@ -21983,7 +22252,7 @@ function Sidebar({
   let lastGroup;
   const from = Math.min(Math.max(0, selectedIndex - Math.floor(height / 2)), Math.max(0, sections.length - height));
   const visible = sections.slice(from, from + height);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
     Box_default,
     {
       flexDirection: "column",
@@ -21992,7 +22261,7 @@ function Sidebar({
       paddingX: 1,
       width: width2,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: focused ? theme.accent : theme.muted, children: "\u0420\u0430\u0437\u0434\u0435\u043B\u044B" }),
         visible.map((section, offset) => {
           const index = from + offset;
           const isActive = section.id === activeId;
@@ -22000,9 +22269,9 @@ function Sidebar({
           const locked = section.needsAuth && !hasAuth;
           const groupChanged = section.group !== void 0 && section.group !== lastGroup;
           lastGroup = section.group;
-          return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_react26.default.Fragment, { children: [
-            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_react27.default.Fragment, { children: [
+            groupChanged ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: theme.muted, children: "\u2500".repeat(inner) }) : null,
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
               Text,
               {
                 color: locked ? theme.muted : isActive ? theme.accent : void 0,
@@ -22020,22 +22289,22 @@ function Sidebar({
     }
   );
 }
-var import_react26, import_jsx_runtime5;
+var import_react27, import_jsx_runtime6;
 var init_Sidebar = __esm({
   async "src/tui/Sidebar.tsx"() {
     "use strict";
     await init_build2();
-    import_react26 = __toESM(require_react(), 1);
+    import_react27 = __toESM(require_react(), 1);
     init_theme();
-    import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
   }
 });
 
 // src/tui/usePlayer.ts
 function usePlayer(backend) {
-  const [status, setStatus] = (0, import_react27.useState)(backend?.status() ?? IDLE);
-  const pending = (0, import_react27.useRef)(null);
-  (0, import_react27.useEffect)(() => {
+  const [status, setStatus] = (0, import_react28.useState)(backend?.status() ?? IDLE);
+  const pending = (0, import_react28.useRef)(null);
+  (0, import_react28.useEffect)(() => {
     if (!backend) return;
     const flush = setInterval(() => {
       if (!pending.current) return;
@@ -22057,11 +22326,11 @@ function usePlayer(backend) {
   }, [backend]);
   return status;
 }
-var import_react27, IDLE, THROTTLE_MS;
+var import_react28, IDLE, THROTTLE_MS;
 var init_usePlayer = __esm({
   "src/tui/usePlayer.ts"() {
     "use strict";
-    import_react27 = __toESM(require_react(), 1);
+    import_react28 = __toESM(require_react(), 1);
     IDLE = { positionSec: null, durationSec: null, paused: false, idle: true };
     THROTTLE_MS = 250;
   }
@@ -22078,32 +22347,38 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
   const status = usePlayer(backend);
   const width2 = clampSize(stdout?.columns, 100, 40);
   const height = clampSize(stdout?.rows, 30, 12);
-  const [focus, setFocus] = (0, import_react28.useState)("list");
-  const [sectionIndex, setSectionIndex] = (0, import_react28.useState)(0);
-  const [activeSection, setActiveSection] = (0, import_react28.useState)("radio");
-  const [rowsBySection, setRows] = (0, import_react28.useState)({});
-  const [selectedBySection, setSelected] = (0, import_react28.useState)({});
-  const [loading, setLoading] = (0, import_react28.useState)(null);
-  const [message, setMessage] = (0, import_react28.useState)(null);
-  const [now, setNow] = (0, import_react28.useState)(null);
-  const [volume, setVolume] = (0, import_react28.useState)(100);
-  const [mutedFrom, setMutedFrom] = (0, import_react28.useState)(100);
-  const [showHelp, setShowHelp] = (0, import_react28.useState)(false);
-  const [radioNow, setRadioNow] = (0, import_react28.useState)(null);
-  const [streamUrl, setStreamUrl] = (0, import_react28.useState)(null);
-  const [tracklist, setTracklist] = (0, import_react28.useState)([]);
-  const [detailShow, setDetailShow] = (0, import_react28.useState)(null);
-  const [query, setQuery] = (0, import_react28.useState)("");
-  const [typing, setTyping] = (0, import_react28.useState)(false);
+  const [focus, setFocus] = (0, import_react29.useState)("list");
+  const [sectionIndex, setSectionIndex] = (0, import_react29.useState)(0);
+  const [activeSection, setActiveSection] = (0, import_react29.useState)("radio");
+  const [rowsBySection, setRows] = (0, import_react29.useState)({});
+  const [selectedBySection, setSelected] = (0, import_react29.useState)({});
+  const [loading, setLoading] = (0, import_react29.useState)(null);
+  const [message, setMessage] = (0, import_react29.useState)(null);
+  const [drill, setDrill] = (0, import_react29.useState)(null);
+  const [now, setNow] = (0, import_react29.useState)(null);
+  const [volume, setVolume] = (0, import_react29.useState)(100);
+  const [mutedFrom, setMutedFrom] = (0, import_react29.useState)(100);
+  const [showHelp, setShowHelp] = (0, import_react29.useState)(false);
+  const [radioNow, setRadioNow] = (0, import_react29.useState)(null);
+  const [streamUrl, setStreamUrl] = (0, import_react29.useState)(null);
+  const [tracklist, setTracklist] = (0, import_react29.useState)([]);
+  const [detailShow, setDetailShow] = (0, import_react29.useState)(null);
+  const [query, setQuery] = (0, import_react29.useState)("");
+  const [typing, setTyping] = (0, import_react29.useState)(false);
+  const [commandOpen, setCommandOpen] = (0, import_react29.useState)(false);
+  const [commandInput, setCommandInput] = (0, import_react29.useState)("");
+  const [commandHighlight, setCommandHighlight] = (0, import_react29.useState)(0);
+  const [commandError, setCommandError] = (0, import_react29.useState)(null);
   const section = sectionById(activeSection);
-  const rows = rowsBySection[activeSection] ?? [];
-  const selected = Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, rows.length - 1));
-  const say = (0, import_react28.useCallback)((text) => setMessage(text), []);
-  const setSelectedFor = (0, import_react28.useCallback)(
+  const sectionRows = rowsBySection[activeSection] ?? [];
+  const rows = drill ? drill.rows : sectionRows;
+  const selected = drill ? drill.selected : Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, sectionRows.length - 1));
+  const say = (0, import_react29.useCallback)((text) => setMessage(text), []);
+  const setSelectedFor = (0, import_react29.useCallback)(
     (id, value) => setSelected((previous) => ({ ...previous, [id]: value })),
     []
   );
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (rowsBySection[activeSection] || activeSection === "radio" || activeSection === "search") return;
     const spec = sectionById(activeSection);
     if (spec.needsAuth && !accessToken) return;
@@ -22120,20 +22395,47 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
-  (0, import_react28.useEffect)(() => {
+  const playRadio = (0, import_react29.useCallback)(async () => {
+    const url = streamUrl;
+    if (!url) return;
+    try {
+      await backend.load(url);
+      setNow({
+        kind: "radio",
+        title: "SURPRISE.FM",
+        subtitle: null,
+        showId: null,
+        totalSec: null,
+        previewEndSec: null,
+        badge: null
+      });
+      say(null);
+    } catch (error) {
+      say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
+    }
+  }, [backend, streamUrl, say]);
+  (0, import_react29.useEffect)(() => {
     void (async () => {
       const settings = await fetchStationSettings();
       const url = await resolveLiveStream(settings);
       setStreamUrl(url);
       try {
         await backend.load(url);
-        setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
+        setNow({
+          kind: "radio",
+          title: "SURPRISE.FM",
+          subtitle: null,
+          showId: null,
+          totalSec: null,
+          previewEndSec: null,
+          badge: null
+        });
       } catch (error) {
         say(`\u042D\u0444\u0438\u0440 \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u043B\u0441\u044F: ${error.message}`);
       }
     })();
   }, []);
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     const refresh = async () => {
       const schedule = await fetchRadioSchedule().catch(() => null);
       if (!schedule) return;
@@ -22141,9 +22443,9 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       setRows((previous) => ({
         ...previous,
         radio: [
-          ...schedule.next ? [{ ...schedule.next, title: `\u0434\u0430\u043B\u044C\u0448\u0435 \xB7 ${formatRadioItem(schedule.next)}` }] : [],
-          ...schedule.now ? [{ ...schedule.now, title: formatRadioItem(schedule.now) }] : [],
-          ...schedule.history.map((item) => ({ ...item, title: formatRadioItem(item) }))
+          ...schedule.next ? [{ ...schedule.next, when: "\u0434\u0430\u043B\u044C\u0448\u0435" }] : [],
+          ...schedule.now ? [{ ...schedule.now, when: "\u0441\u0435\u0439\u0447\u0430\u0441" }] : [],
+          ...schedule.history.map((item) => ({ ...item, when: "" }))
         ]
       }));
     };
@@ -22151,7 +22453,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     const timer = setInterval(() => void refresh(), SCHEDULE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (now?.kind !== "radio") return;
     const sessionId = getSessionId();
     let channelId = null;
@@ -22169,7 +22471,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       if (channelId) void leavePresence(sessionId, accessToken);
     };
   }, [now?.kind, accessToken]);
-  (0, import_react28.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (activeSection !== "search") return;
     if (query.trim().length < 2) {
       setRows((previous) => ({ ...previous, search: [] }));
@@ -22181,8 +22483,8 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     return () => clearTimeout(timer);
   }, [query, activeSection, accessToken]);
   const selectedRow = rows[selected];
-  (0, import_react28.useEffect)(() => {
-    const show = asShow(activeSection, selectedRow);
+  (0, import_react29.useEffect)(() => {
+    const show = asShow(activeSection, drill, selectedRow);
     if (!show) {
       setDetailShow(null);
       setTracklist([]);
@@ -22196,18 +22498,8 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, selectedRow, accessToken]);
-  const playRadio = (0, import_react28.useCallback)(async () => {
-    if (!streamUrl) return;
-    try {
-      await backend.load(streamUrl);
-      setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
-      say(null);
-    } catch (error) {
-      say(`\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
-    }
-  }, [backend, streamUrl, say]);
-  const playShow = (0, import_react28.useCallback)(
+  }, [activeSection, drill, selectedRow, accessToken]);
+  const playShow = (0, import_react29.useCallback)(
     async (show) => {
       say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${show.title ?? "\u0432\u044B\u043F\u0443\u0441\u043A"}\xBB\u2026`);
       const stream = await fetchShowStream(show.id, accessToken).catch(() => null);
@@ -22226,13 +22518,15 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         title: show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
         subtitle: show.artists.map((artist) => artist.name).join(", ") || null,
         showId: show.id,
-        totalSec: show.duration
+        totalSec: show.duration,
+        previewEndSec: null,
+        badge: null
       });
       say(null);
     },
     [backend, accessToken, say]
   );
-  const playById = (0, import_react28.useCallback)(
+  const playById = (0, import_react29.useCallback)(
     async (showId) => {
       const show = await findShow(parseEntityParam(showId), accessToken).catch(() => null);
       if (show) await playShow(show);
@@ -22240,17 +22534,72 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     },
     [accessToken, playShow, say]
   );
-  const activate = (0, import_react28.useCallback)(async () => {
-    const row = rows[selected];
+  const playStoreTrack = (0, import_react29.useCallback)(
+    async (track) => {
+      if (!accessToken) {
+        say("\u0422\u0440\u0435\u043A\u0438 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u0412\u044B\u0439\u0434\u0438\u0442\u0435 \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+        return;
+      }
+      say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${track.title ?? "\u0442\u0440\u0435\u043A"}\xBB\u2026`);
+      let access;
+      try {
+        access = await resolveTrackAccess(track, await getListenerId(), accessToken);
+      } catch (error) {
+        say(error instanceof TrackAccessDeniedError ? error.message : `\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
+        return;
+      }
+      try {
+        await backend.load(access.url, { startSec: access.window?.startSec });
+      } catch (error) {
+        say(`\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: ${error.message}`);
+        return;
+      }
+      setNow({
+        kind: "track",
+        title: track.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+        subtitle: track.artist_name ?? track.releaseTitle,
+        showId: null,
+        totalSec: access.window ? access.window.durationSec : track.duration,
+        previewEndSec: access.window?.endSec ?? null,
+        badge: access.kind === "preview" ? "\u043F\u0440\u0435\u0432\u044C\u044E" : access.kind === "free_listen" ? `\u0431\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u043E${access.playsLeft === null ? "" : ` \xB7 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${access.playsLeft}`}` : null
+      });
+      say(null);
+    },
+    [accessToken, backend, say]
+  );
+  (0, import_react29.useEffect)(() => {
+    const limit = now?.previewEndSec;
+    if (!limit || status.positionSec === null) return;
+    if (status.positionSec >= limit) {
+      void backend.setPaused(true);
+      say("\u041A\u043E\u043D\u0435\u0446 \u043F\u0440\u0435\u0432\u044C\u044E. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.");
+    }
+  }, [now?.previewEndSec, status.positionSec, backend, say]);
+  const openDrill = (0, import_react29.useCallback)(
+    async (title, load) => {
+      say(`\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \xAB${title}\xBB\u2026`);
+      const loaded = await load().catch(() => []);
+      if (loaded.length === 0) {
+        say(`\u0412 \xAB${title}\xBB \u043D\u0435\u0447\u0435\u0433\u043E \u0441\u043B\u0443\u0448\u0430\u0442\u044C`);
+        return;
+      }
+      setDrill({ title, rows: loaded, selected: 0 });
+      setFocus("list");
+      say(null);
+    },
+    [say]
+  );
+  const activate = (0, import_react29.useCallback)(async () => {
+    if (drill) {
+      const row2 = drill.rows[drill.selected];
+      if (!row2) return;
+      return row2.kind === "show" ? playById(row2.id) : playStoreTrack(row2.track);
+    }
+    const row = sectionRows[selected];
     if (!row) return;
     switch (activeSection) {
-      case "radio": {
-        const item = row;
-        const slug = item.show?.slug;
-        if (!slug) return playRadio();
-        const show = await findShow(parseEntityParam(slug), accessToken).catch(() => null);
-        return show ? playShow(show) : playRadio();
-      }
+      case "radio":
+        return playRadio();
       case "shows":
       case "search":
         return playShow(row);
@@ -22273,42 +22622,212 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       }
       case "artists": {
         const artist = row;
-        const found = await showsByArtist(artist.id, accessToken).catch(() => []);
-        const first = found[0];
-        if (!first) return say(`\u0423 \xAB${artist.name}\xBB \u043D\u0435\u0442 \u0432\u044B\u043F\u0443\u0441\u043A\u043E\u0432`);
-        return playById(first.id);
+        return openDrill(
+          artist.name,
+          async () => (await showsByArtist(artist.id, accessToken)).map((show) => ({
+            kind: "show",
+            id: show.id,
+            title: show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+            subtitle: artist.name,
+            duration: show.duration
+          }))
+        );
+      }
+      case "hosts": {
+        const host = row;
+        return openDrill(
+          host.name,
+          async () => (await showsByHost(host.id, accessToken)).map((show) => ({
+            kind: "show",
+            id: show.id,
+            title: show.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+            subtitle: host.name,
+            duration: show.duration
+          }))
+        );
+      }
+      case "releases": {
+        const release = row;
+        if (!accessToken) {
+          say("\u0422\u0440\u0435\u043A\u0438 \u0440\u0435\u043B\u0438\u0437\u043E\u0432 \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445. \u0412\u044B\u0439\u0434\u0438\u0442\u0435 \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+          return;
+        }
+        return openDrill(
+          release.title,
+          async () => (await listReleaseTracks(release.id, accessToken)).map((track) => ({
+            kind: "track",
+            track,
+            title: track.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
+            subtitle: track.artist_name ?? (release.artists.join(", ") || null),
+            duration: track.duration
+          }))
+        );
       }
       case "playlists": {
         const playlist = row;
         if (!accessToken) return;
-        const items = await listPlaylistItems(accessToken, playlist.id).catch(() => []);
-        const firstShow = items.find((item) => item.kind === "show");
-        if (!firstShow) return say("\u0412 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u0435 \u043D\u0435\u0442 \u0432\u044B\u043F\u0443\u0441\u043A\u043E\u0432");
-        return playById(firstShow.id);
+        return openDrill(playlist.title, async () => {
+          const items = await listPlaylistItems(accessToken, playlist.id);
+          return items.filter((item) => item.kind === "show").map((item) => ({
+            kind: "show",
+            id: item.id,
+            title: item.title,
+            subtitle: item.subtitle,
+            duration: item.durationSec
+          }));
+        });
       }
       default:
         say("\u0417\u0434\u0435\u0441\u044C \u043F\u043E\u043A\u0430 \u043D\u0435\u0447\u0435\u0433\u043E \u0438\u0433\u0440\u0430\u0442\u044C");
     }
-  }, [rows, selected, activeSection, accessToken, backend, playRadio, playShow, playById, say]);
-  const moveSelection = (0, import_react28.useCallback)(
+  }, [
+    drill,
+    sectionRows,
+    selected,
+    activeSection,
+    accessToken,
+    backend,
+    playRadio,
+    playShow,
+    playById,
+    playStoreTrack,
+    openDrill,
+    say
+  ]);
+  const moveSelection = (0, import_react29.useCallback)(
     (delta) => {
       if (focus === "sidebar") {
         setSectionIndex((previous) => Math.min(SECTIONS2.length - 1, Math.max(0, previous + delta)));
         return;
       }
-      setSelectedFor(activeSection, Math.min(rows.length - 1, Math.max(0, selected + delta)));
+      if (drill) {
+        setDrill(
+          (previous) => previous ? { ...previous, selected: Math.min(previous.rows.length - 1, Math.max(0, previous.selected + delta)) } : previous
+        );
+        return;
+      }
+      setSelectedFor(activeSection, Math.min(sectionRows.length - 1, Math.max(0, selected + delta)));
     },
-    [focus, activeSection, rows.length, selected, setSelectedFor]
+    [focus, drill, activeSection, sectionRows.length, selected, setSelectedFor]
   );
-  const openSection = (0, import_react28.useCallback)((index) => {
+  const openSection = (0, import_react29.useCallback)((index) => {
     const target = SECTIONS2[index];
     if (!target) return;
     setSectionIndex(index);
     setActiveSection(target.id);
+    setDrill(null);
     setFocus("list");
     setTyping(target.id === "search");
   }, []);
+  const gotoSection = (0, import_react29.useCallback)(
+    (id) => {
+      const index = SECTIONS2.findIndex((candidate) => candidate.id === id);
+      if (index >= 0) openSection(index);
+    },
+    [openSection]
+  );
+  const suggestions = (0, import_react29.useMemo)(() => suggestCommands(commandInput), [commandInput]);
+  const runCommand = (0, import_react29.useCallback)(
+    async (raw) => {
+      const parsed = parseCommand(raw);
+      if (!parsed) return setCommandOpen(false);
+      const command = resolveCommand(parsed.name);
+      if (!command) {
+        setCommandError(`\u041D\u0435\u0442 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xAB${parsed.name}\xBB`);
+        return;
+      }
+      setCommandOpen(false);
+      setCommandInput("");
+      setCommandError(null);
+      switch (command.name) {
+        case "radio":
+          return void playRadio();
+        case "play":
+          return void activate();
+        case "pause":
+          return void backend.setPaused(!status.paused);
+        case "search":
+          gotoSection("search");
+          setQuery(parsed.argument);
+          setTyping(parsed.argument.length === 0);
+          return;
+        case "goto": {
+          const target = SECTION_ALIASES[parsed.argument.toLowerCase()];
+          if (!target) return say(`\u041D\u0435 \u0437\u043D\u0430\u044E \u0440\u0430\u0437\u0434\u0435\u043B \xAB${parsed.argument}\xBB`);
+          return gotoSection(target);
+        }
+        case "volume": {
+          const value = Number.parseInt(parsed.argument, 10);
+          if (Number.isNaN(value)) return say("\u0413\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u044C \u2014 \u0447\u0438\u0441\u043B\u043E \u043E\u0442 0 \u0434\u043E 130");
+          const next = Math.min(130, Math.max(0, value));
+          setVolume(next);
+          void backend.setVolume(next);
+          return;
+        }
+        case "mute":
+          setVolume((value) => {
+            const next = value === 0 ? mutedFrom || 100 : 0;
+            setMutedFrom(value === 0 ? mutedFrom : value);
+            void backend.setVolume(next);
+            return next;
+          });
+          return;
+        case "back":
+          setDrill(null);
+          return;
+        case "login":
+          return say("\u0412\u044B\u0439\u0434\u0438\u0442\u0435 (q) \u0438 \u043D\u0430\u0431\u0435\u0440\u0438\u0442\u0435: surprise login");
+        case "whoami":
+          return say(accessToken ? `\u0412\u044B \u0432\u043E\u0448\u043B\u0438 \xB7 ${userId}` : "\u0412\u044B \u043D\u0435 \u0432\u043E\u0448\u043B\u0438 \u2014 surprise login");
+        case "help":
+          return setShowHelp(true);
+        case "quit":
+          return void onExit().then(() => exit());
+        default:
+          return;
+      }
+    },
+    [
+      playRadio,
+      activate,
+      backend,
+      status.paused,
+      gotoSection,
+      mutedFrom,
+      accessToken,
+      userId,
+      say,
+      onExit,
+      exit
+    ]
+  );
   use_input_default((input, key) => {
+    if (commandOpen) {
+      if (key.escape) {
+        setCommandOpen(false);
+        setCommandInput("");
+        setCommandError(null);
+        return;
+      }
+      if (key.return) return void runCommand(commandInput);
+      if (key.tab) {
+        const pick = suggestions[commandHighlight];
+        if (pick) setCommandInput(`/${pick.name}${pick.arg ? " " : ""}`);
+        return;
+      }
+      if (key.downArrow) return setCommandHighlight((value) => Math.min(suggestions.length - 1, value + 1));
+      if (key.upArrow) return setCommandHighlight((value) => Math.max(0, value - 1));
+      if (key.backspace || key.delete) {
+        setCommandError(null);
+        return setCommandInput((value) => value.slice(0, -1));
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setCommandError(null);
+        setCommandHighlight(0);
+        setCommandInput((value) => value + input);
+      }
+      return;
+    }
     if (typing) {
       if (key.escape || key.return) return setTyping(false);
       if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
@@ -22316,18 +22835,29 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       return;
     }
     if (showHelp) return setShowHelp(false);
+    if (input === "/" || input === ":") {
+      setCommandOpen(true);
+      setCommandInput("");
+      setCommandHighlight(0);
+      setCommandError(null);
+      return;
+    }
     if (input === "q" || key.ctrl && input === "c") {
       void onExit().then(() => exit());
       return;
     }
     if (input === "?") return setShowHelp(true);
+    if (key.escape && drill) return setDrill(null);
     if (key.tab) {
       const order = ["sidebar", "list", "details"];
       const index = order.indexOf(focus);
       setFocus(order[(index + (key.shift ? order.length - 1 : 1)) % order.length] ?? "list");
       return;
     }
-    if (input === "h") return setFocus("sidebar");
+    if (input === "h") {
+      if (drill) return setDrill(null);
+      return setFocus("sidebar");
+    }
     if (input === "l") return setFocus("list");
     const digit = Number.parseInt(input, 10);
     if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(9, SECTIONS2.length)) {
@@ -22339,12 +22869,14 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     if (key.pageUp) return moveSelection(-10);
     if (input === "g") {
       if (focus === "sidebar") setSectionIndex(0);
+      else if (drill) setDrill((previous) => previous ? { ...previous, selected: 0 } : previous);
       else setSelectedFor(activeSection, 0);
       return;
     }
     if (input === "G") {
       if (focus === "sidebar") setSectionIndex(SECTIONS2.length - 1);
-      else setSelectedFor(activeSection, rows.length - 1);
+      else if (drill) setDrill((previous) => previous ? { ...previous, selected: previous.rows.length - 1 } : previous);
+      else setSelectedFor(activeSection, sectionRows.length - 1);
       return;
     }
     if (key.return) {
@@ -22357,7 +22889,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
     if (input === "m" && backend.canSetVolume) {
       setVolume((value) => {
         const next = value === 0 ? mutedFrom || 100 : 0;
-        setMutedFrom(value === 0 ? 0 : value);
+        setMutedFrom(value === 0 ? mutedFrom : value);
         void backend.setVolume(next);
         return next;
       });
@@ -22367,12 +22899,8 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       say("\u041E\u0447\u0435\u0440\u0435\u0434\u044C \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u043F\u043E\u0437\u0436\u0435 \u2014 \u043F\u043E\u043A\u0430 \u0432\u044B\u0431\u0438\u0440\u0430\u0439\u0442\u0435 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435");
       return;
     }
-    if (input === "/") {
-      const index = SECTIONS2.findIndex((candidate) => candidate.id === "search");
-      return openSection(index);
-    }
-    if (key.rightArrow && backend.canSeek && now?.kind === "show") void backend.seek(30, "relative");
-    if (key.leftArrow && backend.canSeek && now?.kind === "show") void backend.seek(-30, "relative");
+    if (key.rightArrow && backend.canSeek && now?.kind !== "radio") void backend.seek(30, "relative");
+    if (key.leftArrow && backend.canSeek && now?.kind !== "radio") void backend.seek(-30, "relative");
     if ((input === "+" || input === "=") && backend.canSetVolume) {
       setVolume((value) => {
         const next = Math.min(130, value + 5);
@@ -22388,26 +22916,27 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
       });
     }
   });
-  const playingIndex = (0, import_react28.useMemo)(() => {
+  const playingIndex = (0, import_react29.useMemo)(() => {
+    if (drill) {
+      return drill.rows.findIndex((row) => row.kind === "show" && row.id === now?.showId);
+    }
     if (activeSection === "radio" && radioNow) {
-      return rows.findIndex((item) => item.played_at === radioNow.played_at);
+      return sectionRows.findIndex((item) => item.played_at === radioNow.played_at);
     }
     if (!now?.showId) return -1;
     if (activeSection === "shows" || activeSection === "search") {
-      return rows.findIndex((show) => show.id === now.showId);
+      return sectionRows.findIndex((show) => show.id === now.showId);
     }
-    if (activeSection === "likes") return rows.findIndex((show) => show.id === now.showId);
+    if (activeSection === "likes") return sectionRows.findIndex((show) => show.id === now.showId);
     return -1;
-  }, [activeSection, rows, radioNow, now?.showId]);
-  const details = (0, import_react28.useMemo)(() => {
-    const row = rows[selected];
-    if (!row) return null;
+  }, [drill, activeSection, sectionRows, radioNow, now?.showId]);
+  const details = (0, import_react29.useMemo)(() => {
+    if (!rows[selected]) return null;
     if (detailShow) {
-      const isPlaying = now?.showId === detailShow.id;
       const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
       return {
         title: detailShow.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
-        subtitle: sameText(artistLine, detailShow.title) ? null : artistLine || null,
+        subtitle: dropIfSame(artistLine, detailShow.title),
         facts: [
           ["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C", formatDuration(detailShow.duration)],
           ["\u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D", detailShow.published_at?.slice(0, 10) ?? "\u2014"]
@@ -22416,12 +22945,12 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         tracklist,
         // Подсветка трека — только у ИГРАЮЩЕГО выпуска: у чужого позиция плеера
         // к его треклисту отношения не имеет.
-        playingTrack: isPlaying ? currentTrackIndex(tracklist, status.positionSec) : -1
+        playingTrack: now?.showId === detailShow.id ? currentTrackIndex(tracklist, status.positionSec) : -1
       };
     }
-    return describeRow(activeSection, row);
-  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection]);
-  const info = (0, import_react28.useMemo)(() => {
+    return describeRow(activeSection, drill, rows[selected]);
+  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection, drill]);
+  const info = (0, import_react29.useMemo)(() => {
     if (now?.kind === "radio") {
       return {
         title: formatRadioItem(radioNow) || "SURPRISE.FM",
@@ -22430,27 +22959,32 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         // а не плеер, у бесконечного потока своей позиции нет.
         position: elapsedSec(radioNow),
         total: radioNow?.duration ?? null,
-        live: true
+        live: true,
+        badge: null
       };
     }
-    if (now?.kind === "show") {
+    if (now) {
+      const start = now.previewEndSec !== null && now.totalSec ? now.previewEndSec - now.totalSec : 0;
+      const position = status.positionSec === null ? null : Math.max(0, status.positionSec - start);
       return {
         title: now.title,
         subtitle: now.subtitle,
-        position: status.positionSec,
+        position: now.previewEndSec === null ? status.positionSec : position,
         total: status.durationSec ?? now.totalSec,
-        live: false
+        live: false,
+        badge: now.badge
       };
     }
-    return { title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442", subtitle: null, position: null, total: null, live: false };
+    return { title: "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0438\u0433\u0440\u0430\u0435\u0442", subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
-  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(HelpOverlay, { width: width2 });
+  if (showHelp) return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(HelpOverlay, { width: width2 });
   const contentWidth = Math.max(40, width2 - SIDEBAR_WIDTH);
-  const bodyHeight = Math.max(8, height - 6);
+  const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6));
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+  const listTitle = drill ? `${drill.title} \u2014 Esc \u043D\u0430\u0437\u0430\u0434` : activeSection === "search" ? `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${section.listTitle} \u2014 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026` : activeSection === "radio" ? `${section.listTitle} \xB7 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0441\u043F\u0440\u0430\u0432\u043A\u0438` : section.listTitle;
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", width: width2, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         Sidebar,
         {
           sections: SECTIONS2.map((candidate, index) => ({
@@ -22467,13 +23001,13 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
           height: bodyHeight - 2
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Box_default, { flexDirection: "column", width: contentWidth, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           ListPanel,
           {
-            title: activeSection === "search" ? `\u041F\u043E\u0438\u0441\u043A: ${query || "\u2026"}${typing ? "\u258C" : ""}` : loading === activeSection ? `${section.listTitle} \u2014 \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C\u2026` : section.listTitle,
+            title: listTitle,
             rows,
-            columns: section.columns,
+            columns: drill ? DRILL_COLUMNS : section.columns,
             selected,
             playing: playingIndex,
             height: listHeight,
@@ -22482,7 +23016,7 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
             emptyHint: section.needsAuth && !accessToken ? "\u041D\u0443\u0436\u0435\u043D \u0432\u0445\u043E\u0434: surprise login" : section.emptyHint
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           DetailsPanel,
           {
             details,
@@ -22493,7 +23027,17 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         )
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+    commandOpen ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      CommandLine,
+      {
+        input: commandInput,
+        suggestions,
+        highlighted: commandHighlight,
+        width: width2,
+        error: commandError
+      }
+    ) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       PlayerBar,
       {
         title: info.title,
@@ -22504,12 +23048,15 @@ function App2({ backend, backendName, accessToken, userId, onExit }) {
         state: status,
         backend: backendName,
         volume,
-        badge: null,
+        badge: info.badge,
         width: width2
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "Tab/h/l \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 / \u2014 \u043F\u043E\u0438\u0441\u043A \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Box_default, { paddingX: 1, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Text, { color: message ? theme.paused : theme.muted, children: message ?? "/ \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xB7 Tab \u2014 \u043F\u0430\u043D\u0435\u043B\u0438 \xB7 j/k \u2014 \u0441\u043F\u0438\u0441\u043E\u043A \xB7 Enter \u2014 \u0438\u0433\u0440\u0430\u0442\u044C \xB7 space \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 ? \u2014 \u043F\u043E\u043C\u043E\u0449\u044C \xB7 q \u2014 \u0432\u044B\u0445\u043E\u0434" }) })
   ] });
+}
+function clampSize(value, fallback, minimum) {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 function dropIfSame(value, title) {
   const text = (value ?? "").trim();
@@ -22518,16 +23065,26 @@ function dropIfSame(value, title) {
 function sameText(a, b) {
   return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 }
-function clampSize(value, fallback, minimum) {
-  return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
-}
-function asShow(sectionId, row) {
-  if (!row) return null;
+function asShow(sectionId, drill, row) {
+  if (!row || drill) return null;
   if (sectionId === "shows" || sectionId === "search") return row;
   return null;
 }
-function describeRow(sectionId, row) {
+function describeRow(sectionId, drill, row) {
   const empty = { tracklist: [], playingTrack: -1 };
+  if (drill) {
+    const item = row;
+    return {
+      title: item.title,
+      subtitle: dropIfSame(item.subtitle, item.title),
+      facts: [
+        ["\u0434\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C", formatDuration(item.duration)],
+        ["\u0447\u0442\u043E \u044D\u0442\u043E", item.kind === "track" ? "\u0442\u0440\u0435\u043A \u0440\u0435\u043B\u0438\u0437\u0430" : "\u0432\u044B\u043F\u0443\u0441\u043A"]
+      ],
+      description: null,
+      ...empty
+    };
+  }
   switch (sectionId) {
     case "artists": {
       const artist = row;
@@ -22606,20 +23163,23 @@ function describeRow(sectionId, row) {
       return null;
   }
 }
-var import_react28, import_jsx_runtime6, SIDEBAR_WIDTH;
+var import_react29, import_jsx_runtime7, SIDEBAR_WIDTH, DRILL_COLUMNS;
 var init_App2 = __esm({
   async "src/tui/App.tsx"() {
     "use strict";
     await init_build2();
-    import_react28 = __toESM(require_react(), 1);
+    import_react29 = __toESM(require_react(), 1);
     init_radio();
     init_catalog();
     init_shows();
     init_library();
+    init_store();
     init_config();
     init_format();
     init_ids();
     init_publicId();
+    await init_CommandLine();
+    init_commands();
     await init_DetailsPanel();
     await init_HelpOverlay();
     await init_ListPanel();
@@ -22628,8 +23188,14 @@ var init_App2 = __esm({
     await init_Sidebar();
     init_theme();
     init_usePlayer();
-    import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+    import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
     SIDEBAR_WIDTH = 24;
+    DRILL_COLUMNS = [
+      { header: "", width: 6, value: (row) => row.kind === "track" ? "\u0442\u0440\u0435\u043A" : "\u0432\u044B\u043F\u0443\u0441\u043A" },
+      { header: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435", width: 0, flex: true, value: (row) => row.title },
+      { header: "\u041A\u0442\u043E", width: 22, value: (row) => row.subtitle ?? "\u2014" },
+      { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (row) => formatDuration(row.duration) }
+    ];
   }
 });
 
@@ -23273,132 +23839,7 @@ async function loginCommand(argv) {
 
 // src/commands/play.ts
 init_shows();
-
-// src/api/store.ts
-init_http();
-
-// src/lib/previewWindow.ts
-var PREVIEW_FALLBACK_SEC = 30;
-var PREVIEW_START_RATIO = 0.25;
-var positiveInt = (value) => {
-  const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : Number.NaN;
-  return Number.isFinite(n) && n > 0 ? n : null;
-};
-function previewWindow(track) {
-  const total = positiveInt(track.duration);
-  const wanted = positiveInt(track.preview_duration_sec) ?? PREVIEW_FALLBACK_SEC;
-  if (total === null) return { startSec: 0, durationSec: wanted, endSec: wanted };
-  if (total <= wanted) return { startSec: 0, durationSec: total, endSec: total };
-  const explicit = positiveInt(track.preview_start_sec);
-  const desired = explicit ?? Math.floor(total * PREVIEW_START_RATIO);
-  const startSec = Math.max(0, Math.min(desired, total - wanted));
-  return { startSec, durationSec: wanted, endSec: startSec + wanted };
-}
-
-// src/api/store.ts
-var TRACK_SELECT = "id,title,artist_name,duration,position,release_id,preview_start_sec,preview_duration_sec,releases(title)";
-function toTrack(row) {
-  const { releases, ...rest } = row;
-  return { ...rest, releaseTitle: releases?.title ?? null };
-}
-async function fetchTrack(trackId, accessToken = null) {
-  const params = new URLSearchParams({ select: TRACK_SELECT, id: `eq.${trackId}`, limit: "1" });
-  const rows = await request(restUrl(`store_tracks?${params}`), {
-    headers: accessToken ? authHeaders(accessToken) : anonHeaders()
-  });
-  const row = rows?.[0];
-  return row ? toTrack(row) : null;
-}
-async function listReleaseTracks(releaseId, accessToken = null) {
-  const params = new URLSearchParams({
-    select: TRACK_SELECT,
-    release_id: `eq.${releaseId}`,
-    order: "position.asc.nullslast"
-  });
-  const rows = await request(restUrl(`store_tracks?${params}`), {
-    headers: accessToken ? authHeaders(accessToken) : anonHeaders()
-  });
-  return (rows ?? []).map(toTrack);
-}
-var RERESOLVE_AFTER_SEC = 600;
-function needsReresolve(access, nowSec = Math.floor(Date.now() / 1e3)) {
-  return nowSec - access.issuedAt >= RERESOLVE_AFTER_SEC;
-}
-function explainDenial(reason, fallback) {
-  switch (reason) {
-    case "limit_reached":
-      return "\u0411\u0435\u0441\u043F\u043B\u0430\u0442\u043D\u044B\u0435 \u043F\u0440\u043E\u0441\u043B\u0443\u0448\u0438\u0432\u0430\u043D\u0438\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u0440\u0435\u043A\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0438\u043B\u0438\u0441\u044C. \u041F\u043E\u043B\u043D\u044B\u0439 \u0442\u0440\u0435\u043A \u2014 \u043F\u043E \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0435 \u0438\u043B\u0438 \u043F\u043E\u0441\u043B\u0435 \u043F\u043E\u043A\u0443\u043F\u043A\u0438.";
-    case "not_released":
-      return "\u0420\u0435\u043B\u0438\u0437 \u0435\u0449\u0451 \u043D\u0435 \u0432\u044B\u0448\u0435\u043B.";
-    case "no_owner":
-    case "track_not_found":
-      return "\u0422\u0440\u0435\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u0438\u043B\u0438 \u0441\u043D\u044F\u0442 \u0441 \u043F\u0440\u043E\u0434\u0430\u0436\u0438.";
-    default:
-      return fallback;
-  }
-}
-var TrackAccessDeniedError = class extends Error {
-  reason;
-  constructor(reason, fallback) {
-    super(explainDenial(reason, fallback));
-    this.name = "TrackAccessDeniedError";
-    this.reason = reason;
-  }
-};
-async function resolveTrackAccess(track, listenerId, accessToken) {
-  const issuedAt = Math.floor(Date.now() / 1e3);
-  try {
-    const data = await callFunction(
-      "store-stream",
-      { track_id: track.id, session_id: listenerId },
-      { accessToken, retries: 0 }
-    );
-    if (data.url) {
-      return {
-        kind: data.free_listen === true ? "free_listen" : "full",
-        url: data.url,
-        isHls: data.hls === true,
-        playsLeft: typeof data.plays_left === "number" ? data.plays_left : null,
-        issuedAt,
-        window: null
-      };
-    }
-    throw new TrackAccessDeniedError(data.reason, data.error ?? "\u0414\u043E\u0441\u0442\u0443\u043F \u043A \u0442\u0440\u0435\u043A\u0443 \u043D\u0435 \u0432\u044B\u0434\u0430\u043D");
-  } catch (error) {
-    if (error instanceof TrackAccessDeniedError) throw error;
-    if (error instanceof ApiError && error.status === 403) {
-      const body = error.body ?? {};
-      const denial = new TrackAccessDeniedError(body.reason, body.error ?? error.message);
-      const preview = await fetchPreviewUrls([track.id], accessToken).catch(() => /* @__PURE__ */ new Map());
-      const url = preview.get(track.id);
-      if (!url) throw denial;
-      return {
-        kind: "preview",
-        url,
-        isHls: false,
-        playsLeft: typeof body.plays_left === "number" ? body.plays_left : 0,
-        issuedAt,
-        window: previewWindow(track)
-      };
-    }
-    throw error;
-  }
-}
-async function fetchPreviewUrls(trackIds, accessToken) {
-  const urls = /* @__PURE__ */ new Map();
-  if (trackIds.length === 0) return urls;
-  for (const part of chunk(trackIds, 50)) {
-    const data = await callFunction(
-      "preview-stream",
-      { track_ids: part },
-      { accessToken, retries: 1 }
-    );
-    for (const [id, url] of Object.entries(data.urls ?? {})) urls.set(id, url);
-  }
-  return urls;
-}
-
-// src/commands/play.ts
+init_store();
 init_format();
 init_publicId();
 
@@ -24037,6 +24478,7 @@ var ListenCounter = class {
 };
 
 // src/commands/track.ts
+init_store();
 init_format();
 init_ids();
 
@@ -24575,14 +25017,14 @@ async function tuiCommand() {
     );
   }
   const session = await getValidSession();
-  const [{ render: render2 }, React16, { App: App3 }] = await Promise.all([
+  const [{ render: render2 }, React17, { App: App3 }] = await Promise.all([
     init_build2().then(() => build_exports),
     Promise.resolve().then(() => __toESM(require_react(), 1)),
     init_App2().then(() => App_exports)
   ]);
   await backend.start();
   const instance = render2(
-    React16.createElement(App3, {
+    React17.createElement(App3, {
       backend,
       backendName: name,
       accessToken: session?.access_token ?? null,

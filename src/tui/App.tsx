@@ -1,13 +1,12 @@
 /**
  * Многопанельный интерфейс: разделы слева, список справа, подробности под ним,
- * плеер внизу во всю ширину.
+ * плеер во всю ширину внизу.
  *
  * Три состояния намеренно разведены и видны одновременно:
  *   активный РАЗДЕЛ  — что открыто;
  *   ВЫБРАННАЯ строка — куда смотрит человек;
  *   ИГРАЮЩЕЕ         — что звучит.
- * Смешать их — значит заставить прерывать музыку ради просмотра каталога.
- * Ровно этого не умеет построчный режим.
+ * Поэтому каталог листается без остановки музыки.
  */
 
 import { Box, Text, useApp, useInput, useStdout } from "ink";
@@ -25,7 +24,7 @@ import {
   SCHEDULE_INTERVAL_MS,
   type RadioItem,
 } from "../api/radio.ts";
-import { showsByArtist, type Artist, type Host, type Release } from "../api/catalog.ts";
+import { showsByArtist, showsByHost, type Artist, type Host, type Release } from "../api/catalog.ts";
 import {
   currentTrackIndex,
   fetchShowStream,
@@ -36,16 +35,25 @@ import {
   type TracklistItem,
 } from "../api/shows.ts";
 import { listPlaylistItems, type Find, type LikedShow, type PlaylistSummary } from "../api/library.ts";
+import {
+  listReleaseTracks,
+  resolveTrackAccess,
+  TrackAccessDeniedError,
+  type StoreTrack,
+  type TrackAccess,
+} from "../api/store.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../config.ts";
 import { formatDuration } from "../lib/format.ts";
-import { getSessionId } from "../lib/ids.ts";
+import { getListenerId, getSessionId } from "../lib/ids.ts";
 import { parseEntityParam } from "../lib/publicId.ts";
 import type { AudioBackend } from "../player/backend.ts";
+import { CommandLine } from "./CommandLine.tsx";
+import { parseCommand, resolveCommand, suggestCommands, SECTION_ALIASES } from "./commands.ts";
 import { DetailsPanel, type Details } from "./DetailsPanel.tsx";
 import { HelpOverlay } from "./HelpOverlay.tsx";
 import { ListPanel } from "./ListPanel.tsx";
 import { PlayerBar } from "./PlayerBar.tsx";
-import { SECTIONS, sectionById, type SavedRow, type SectionId } from "./sections.ts";
+import { SECTIONS, sectionById, type ColumnSpec, type SavedRow, type SectionId } from "./sections.ts";
 import { Sidebar } from "./Sidebar.tsx";
 import { theme } from "./theme.ts";
 import { usePlayer } from "./usePlayer.ts";
@@ -53,11 +61,30 @@ import { usePlayer } from "./usePlayer.ts";
 type Focus = "sidebar" | "list" | "details";
 
 interface NowPlaying {
-  kind: "radio" | "show";
+  kind: "radio" | "show" | "track";
   title: string;
   subtitle: string | null;
   showId: string | null;
   totalSec: number | null;
+  /** Ограничение превью: секунда, на которой обязаны остановиться. */
+  previewEndSec: number | null;
+  badge: string | null;
+}
+
+/**
+ * Строка внутри карточки — выпуск или трек релиза.
+ *
+ * Карточка (артист, автор, релиз, плейлист) открывается поверх списка раздела,
+ * а не вместо него: выйти назад — Esc, и человек возвращается ровно туда, где был.
+ */
+type DrillRow =
+  | { kind: "show"; id: string; title: string; subtitle: string | null; duration: number | null }
+  | { kind: "track"; track: StoreTrack; title: string; subtitle: string | null; duration: number | null };
+
+interface Drill {
+  title: string;
+  rows: DrillRow[];
+  selected: number;
 }
 
 export interface AppProps {
@@ -69,8 +96,14 @@ export interface AppProps {
 }
 
 // Ширина под самое длинное название раздела с номером: «6 Моя коллекция».
-// На 20 колонках половина пунктов обрезалась в многоточие.
 const SIDEBAR_WIDTH = 24;
+
+const DRILL_COLUMNS: ReadonlyArray<ColumnSpec<DrillRow>> = [
+  { header: "", width: 6, value: (row) => (row.kind === "track" ? "трек" : "выпуск") },
+  { header: "Название", width: 0, flex: true, value: (row) => row.title },
+  { header: "Кто", width: 22, value: (row) => row.subtitle ?? "—" },
+  { header: "Длит.", width: 8, value: (row) => formatDuration(row.duration) },
+];
 
 export function App({ backend, backendName, accessToken, userId, onExit }: AppProps): React.ReactElement {
   const { exit } = useApp();
@@ -78,8 +111,8 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
   const status = usePlayer(backend);
 
   // Ноль — реальное значение columns там, где размер терминала неизвестен
-  // (псевдотерминал без управляющего tty, запуск под supervisor). Без защиты
-  // интерфейс схлопывался в колонку шириной в один символ.
+  // (псевдотерминал без управляющего tty). Без защиты интерфейс схлопывался
+  // в колонку шириной в один символ.
   const width = clampSize(stdout?.columns, 100, 40);
   const height = clampSize(stdout?.rows, 30, 12);
 
@@ -92,9 +125,10 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
   const [loading, setLoading] = useState<SectionId | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [drill, setDrill] = useState<Drill | null>(null);
+
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [volume, setVolume] = useState(100);
-  /** Громкость до выключения звука — чтобы вернуть ту же, а не 100. */
   const [mutedFrom, setMutedFrom] = useState(100);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -107,9 +141,17 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
   const [query, setQuery] = useState("");
   const [typing, setTyping] = useState(false);
 
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [commandHighlight, setCommandHighlight] = useState(0);
+  const [commandError, setCommandError] = useState<string | null>(null);
+
   const section = sectionById(activeSection);
-  const rows = rowsBySection[activeSection] ?? [];
-  const selected = Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, rows.length - 1));
+  const sectionRows = rowsBySection[activeSection] ?? [];
+  const rows: readonly unknown[] = drill ? drill.rows : sectionRows;
+  const selected = drill
+    ? drill.selected
+    : Math.min(selectedBySection[activeSection] ?? 0, Math.max(0, sectionRows.length - 1));
 
   const say = useCallback((text: string | null) => setMessage(text), []);
   const setSelectedFor = useCallback(
@@ -145,6 +187,26 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
 
   // ── Эфир ──
 
+  const playRadio = useCallback(async () => {
+    const url = streamUrl;
+    if (!url) return;
+    try {
+      await backend.load(url);
+      setNow({
+        kind: "radio",
+        title: "SURPRISE.FM",
+        subtitle: null,
+        showId: null,
+        totalSec: null,
+        previewEndSec: null,
+        badge: null,
+      });
+      say(null);
+    } catch (error) {
+      say(`Эфир не запустился: ${(error as Error).message}`);
+    }
+  }, [backend, streamUrl, say]);
+
   useEffect(() => {
     void (async () => {
       const settings = await fetchStationSettings();
@@ -152,13 +214,20 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       setStreamUrl(url);
       try {
         await backend.load(url);
-        setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
+        setNow({
+          kind: "radio",
+          title: "SURPRISE.FM",
+          subtitle: null,
+          showId: null,
+          totalSec: null,
+          previewEndSec: null,
+          badge: null,
+        });
       } catch (error) {
         say(`Эфир не запустился: ${(error as Error).message}`);
       }
     })();
-    // Один раз при запуске: backend за жизнь интерфейса не меняется, а его
-    // добавление в зависимости перезапускало бы эфир на каждой перерисовке.
+    // Один раз при запуске: backend за жизнь интерфейса не меняется.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -170,9 +239,9 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       setRows((previous) => ({
         ...previous,
         radio: [
-          ...(schedule.next ? [{ ...schedule.next, title: `дальше · ${formatRadioItem(schedule.next)}` }] : []),
-          ...(schedule.now ? [{ ...schedule.now, title: formatRadioItem(schedule.now) }] : []),
-          ...schedule.history.map((item) => ({ ...item, title: formatRadioItem(item) })),
+          ...(schedule.next ? [{ ...schedule.next, when: "дальше" }] : []),
+          ...(schedule.now ? [{ ...schedule.now, when: "сейчас" }] : []),
+          ...schedule.history.map((item) => ({ ...item, when: "" })),
         ],
       }));
     };
@@ -211,7 +280,6 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       setRows((previous) => ({ ...previous, search: [] }));
       return;
     }
-    // Задержка: запрос на каждую букву — это несколько обращений на слово.
     const timer = setTimeout(() => {
       void searchShows(query.trim(), 50, accessToken)
         .then((found) => setRows((previous) => ({ ...previous, search: found })))
@@ -225,9 +293,7 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
   const selectedRow = rows[selected];
 
   useEffect(() => {
-    // Треклист и описание есть только у выпуска; остальные сущности описываются
-    // тем, что уже пришло вместе со списком.
-    const show = asShow(activeSection, selectedRow);
+    const show = asShow(activeSection, drill, selectedRow);
     if (!show) {
       setDetailShow(null);
       setTracklist([]);
@@ -244,20 +310,9 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     return () => {
       cancelled = true;
     };
-  }, [activeSection, selectedRow, accessToken]);
+  }, [activeSection, drill, selectedRow, accessToken]);
 
   // ── Воспроизведение ──
-
-  const playRadio = useCallback(async () => {
-    if (!streamUrl) return;
-    try {
-      await backend.load(streamUrl);
-      setNow({ kind: "radio", title: "SURPRISE.FM", subtitle: null, showId: null, totalSec: null });
-      say(null);
-    } catch (error) {
-      say(`Не вышло: ${(error as Error).message}`);
-    }
-  }, [backend, streamUrl, say]);
 
   const playShow = useCallback(
     async (show: Show) => {
@@ -279,6 +334,8 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         subtitle: show.artists.map((artist) => artist.name).join(", ") || null,
         showId: show.id,
         totalSec: show.duration,
+        previewEndSec: null,
+        badge: null,
       });
       say(null);
     },
@@ -294,26 +351,105 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     [accessToken, playShow, say],
   );
 
-  /** Enter: у каждого раздела своё осмысленное действие. */
+  /**
+   * Трек магазина. Доступ решает сервер: store-stream смотрит покупку, подписку
+   * и квоту бесплатных прослушиваний. Наше дело — показать причину отказа и
+   * остановиться на границе превью, потому что сервер отдаёт файл целиком.
+   */
+  const playStoreTrack = useCallback(
+    async (track: StoreTrack) => {
+      if (!accessToken) {
+        say("Треки — только для вошедших. Выйдите и наберите: surprise login");
+        return;
+      }
+      say(`Открываем «${track.title ?? "трек"}»…`);
+      let access: TrackAccess;
+      try {
+        access = await resolveTrackAccess(track, await getListenerId(), accessToken);
+      } catch (error) {
+        say(error instanceof TrackAccessDeniedError ? error.message : `Не вышло: ${(error as Error).message}`);
+        return;
+      }
+
+      try {
+        await backend.load(access.url, { startSec: access.window?.startSec });
+      } catch (error) {
+        say(`Не вышло: ${(error as Error).message}`);
+        return;
+      }
+
+      setNow({
+        kind: "track",
+        title: track.title ?? "Без названия",
+        subtitle: track.artist_name ?? track.releaseTitle,
+        showId: null,
+        totalSec: access.window ? access.window.durationSec : track.duration,
+        previewEndSec: access.window?.endSec ?? null,
+        badge:
+          access.kind === "preview"
+            ? "превью"
+            : access.kind === "free_listen"
+              ? `бесплатно${access.playsLeft === null ? "" : ` · осталось ${access.playsLeft}`}`
+              : null,
+      });
+      say(null);
+    },
+    [accessToken, backend, say],
+  );
+
+  // Превью обязан обрывать клиент: в бакете лежит ПОЛНАЯ копия трека, и без
+  // этой проверки «превью» оказалось бы треком целиком.
+  useEffect(() => {
+    const limit = now?.previewEndSec;
+    if (!limit || status.positionSec === null) return;
+    if (status.positionSec >= limit) {
+      void backend.setPaused(true);
+      say("Конец превью. Полный трек — по подписке или после покупки.");
+    }
+  }, [now?.previewEndSec, status.positionSec, backend, say]);
+
+  // ── Открытие карточки ──
+
+  const openDrill = useCallback(
+    async (title: string, load: () => Promise<DrillRow[]>) => {
+      say(`Открываем «${title}»…`);
+      const loaded = await load().catch(() => []);
+      if (loaded.length === 0) {
+        say(`В «${title}» нечего слушать`);
+        return;
+      }
+      setDrill({ title, rows: loaded, selected: 0 });
+      setFocus("list");
+      say(null);
+    },
+    [say],
+  );
+
   const activate = useCallback(async () => {
-    const row = rows[selected];
+    // Внутри карточки Enter играет выбранное — выпуск или трек.
+    if (drill) {
+      const row = drill.rows[drill.selected];
+      if (!row) return;
+      return row.kind === "show" ? playById(row.id) : playStoreTrack(row.track);
+    }
+
+    const row = sectionRows[selected];
     if (!row) return;
 
     switch (activeSection) {
-      case "radio": {
-        const item = row as RadioItem;
-        const slug = item.show?.slug;
-        // У элемента эфира есть привязка к архивной записи — открываем её.
-        // «Перемотать» живой поток нельзя, он этого не умеет.
-        if (!slug) return playRadio();
-        const show = await findShow(parseEntityParam(slug), accessToken).catch(() => null);
-        return show ? playShow(show) : playRadio();
-      }
+      case "radio":
+        // Эфир — это поток, а не список для запуска. Расписание показывает, что
+        // играло и что дальше, но открывать по нему архивные записи нельзя:
+        // человек нажимал Enter в ЭФИРЕ, а получал выпуск с начала.
+        return playRadio();
+
       case "shows":
       case "search":
         return playShow(row as Show);
+
       case "likes":
         return playById((row as LikedShow).id);
+
       case "finds": {
         const find = row as Find;
         if (!find.show) return;
@@ -324,33 +460,93 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         }
         return;
       }
+
       case "saved": {
         const saved = row as SavedRow;
         if (saved.isShow) return playById(saved.id);
         say(`«${saved.entityType}» из терминала пока не открыть`);
         return;
       }
+
       case "artists": {
         const artist = row as Artist;
-        const found = await showsByArtist(artist.id, accessToken).catch(() => []);
-        const first = found[0];
-        if (!first) return say(`У «${artist.name}» нет выпусков`);
-        return playById(first.id);
+        return openDrill(artist.name, async () =>
+          (await showsByArtist(artist.id, accessToken)).map((show) => ({
+            kind: "show" as const,
+            id: show.id,
+            title: show.title ?? "Без названия",
+            subtitle: artist.name,
+            duration: show.duration,
+          })),
+        );
       }
+
+      case "hosts": {
+        const host = row as Host;
+        return openDrill(host.name, async () =>
+          (await showsByHost(host.id, accessToken)).map((show) => ({
+            kind: "show" as const,
+            id: show.id,
+            title: show.title ?? "Без названия",
+            subtitle: host.name,
+            duration: show.duration,
+          })),
+        );
+      }
+
+      case "releases": {
+        const release = row as Release;
+        if (!accessToken) {
+          say("Треки релизов — только для вошедших. Выйдите и наберите: surprise login");
+          return;
+        }
+        return openDrill(release.title, async () =>
+          (await listReleaseTracks(release.id, accessToken)).map((track) => ({
+            kind: "track" as const,
+            track,
+            title: track.title ?? "Без названия",
+            subtitle: track.artist_name ?? (release.artists.join(", ") || null),
+            duration: track.duration,
+          })),
+        );
+      }
+
       case "playlists": {
         const playlist = row as PlaylistSummary;
         if (!accessToken) return;
-        const items = await listPlaylistItems(accessToken, playlist.id).catch(() => []);
-        const firstShow = items.find((item) => item.kind === "show");
-        if (!firstShow) return say("В плейлисте нет выпусков");
-        return playById(firstShow.id);
+        return openDrill(playlist.title, async () => {
+          const items = await listPlaylistItems(accessToken, playlist.id);
+          return items
+            .filter((item) => item.kind === "show")
+            .map((item) => ({
+              kind: "show" as const,
+              id: item.id,
+              title: item.title,
+              subtitle: item.subtitle,
+              duration: item.durationSec,
+            }));
+        });
       }
+
       default:
         say("Здесь пока нечего играть");
     }
-  }, [rows, selected, activeSection, accessToken, backend, playRadio, playShow, playById, say]);
+  }, [
+    drill,
+    sectionRows,
+    selected,
+    activeSection,
+    accessToken,
+    backend,
+    playRadio,
+    playShow,
+    playById,
+    playStoreTrack,
+    openDrill,
+    say,
+  ]);
 
-  // ── Клавиатура ──
+  // ── Навигация ──
 
   const moveSelection = useCallback(
     (delta: number) => {
@@ -358,9 +554,17 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         setSectionIndex((previous) => Math.min(SECTIONS.length - 1, Math.max(0, previous + delta)));
         return;
       }
-      setSelectedFor(activeSection, Math.min(rows.length - 1, Math.max(0, selected + delta)));
+      if (drill) {
+        setDrill((previous) =>
+          previous
+            ? { ...previous, selected: Math.min(previous.rows.length - 1, Math.max(0, previous.selected + delta)) }
+            : previous,
+        );
+        return;
+      }
+      setSelectedFor(activeSection, Math.min(sectionRows.length - 1, Math.max(0, selected + delta)));
     },
-    [focus, activeSection, rows.length, selected, setSelectedFor],
+    [focus, drill, activeSection, sectionRows.length, selected, setSelectedFor],
   );
 
   const openSection = useCallback((index: number) => {
@@ -368,14 +572,134 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     if (!target) return;
     setSectionIndex(index);
     setActiveSection(target.id);
+    setDrill(null);
     setFocus("list");
     setTyping(target.id === "search");
   }, []);
 
+  const gotoSection = useCallback(
+    (id: SectionId) => {
+      const index = SECTIONS.findIndex((candidate) => candidate.id === id);
+      if (index >= 0) openSection(index);
+    },
+    [openSection],
+  );
+
+  // ── Командная строка ──
+
+  const suggestions = useMemo(() => suggestCommands(commandInput), [commandInput]);
+
+  const runCommand = useCallback(
+    async (raw: string) => {
+      const parsed = parseCommand(raw);
+      if (!parsed) return setCommandOpen(false);
+
+      const command = resolveCommand(parsed.name);
+      if (!command) {
+        setCommandError(`Нет команды «${parsed.name}»`);
+        return;
+      }
+
+      setCommandOpen(false);
+      setCommandInput("");
+      setCommandError(null);
+
+      switch (command.name) {
+        case "radio":
+          return void playRadio();
+        case "play":
+          return void activate();
+        case "pause":
+          return void backend.setPaused(!status.paused);
+        case "search":
+          gotoSection("search");
+          setQuery(parsed.argument);
+          setTyping(parsed.argument.length === 0);
+          return;
+        case "goto": {
+          const target = SECTION_ALIASES[parsed.argument.toLowerCase()];
+          if (!target) return say(`Не знаю раздел «${parsed.argument}»`);
+          return gotoSection(target);
+        }
+        case "volume": {
+          const value = Number.parseInt(parsed.argument, 10);
+          if (Number.isNaN(value)) return say("Громкость — число от 0 до 130");
+          const next = Math.min(130, Math.max(0, value));
+          setVolume(next);
+          void backend.setVolume(next);
+          return;
+        }
+        case "mute":
+          setVolume((value) => {
+            const next = value === 0 ? mutedFrom || 100 : 0;
+            setMutedFrom(value === 0 ? mutedFrom : value);
+            void backend.setVolume(next);
+            return next;
+          });
+          return;
+        case "back":
+          setDrill(null);
+          return;
+        case "login":
+          // Вход требует ввода и открытия ссылки — в полноэкранном режиме это
+          // не сделать честно. Говорим, что набрать, вместо подделки процесса.
+          return say("Выйдите (q) и наберите: surprise login");
+        case "whoami":
+          return say(accessToken ? `Вы вошли · ${userId}` : "Вы не вошли — surprise login");
+        case "help":
+          return setShowHelp(true);
+        case "quit":
+          return void onExit().then(() => exit());
+        default:
+          return;
+      }
+    },
+    [
+      playRadio,
+      activate,
+      backend,
+      status.paused,
+      gotoSection,
+      mutedFrom,
+      accessToken,
+      userId,
+      say,
+      onExit,
+      exit,
+    ],
+  );
+
   useInput((input, key) => {
+    // Командная строка перехватывает ввод целиком: иначе «q» в команде вышло бы
+    // из программы, а «j» уехало бы в список.
+    if (commandOpen) {
+      if (key.escape) {
+        setCommandOpen(false);
+        setCommandInput("");
+        setCommandError(null);
+        return;
+      }
+      if (key.return) return void runCommand(commandInput);
+      if (key.tab) {
+        const pick = suggestions[commandHighlight];
+        if (pick) setCommandInput(`/${pick.name}${pick.arg ? " " : ""}`);
+        return;
+      }
+      if (key.downArrow) return setCommandHighlight((value) => Math.min(suggestions.length - 1, value + 1));
+      if (key.upArrow) return setCommandHighlight((value) => Math.max(0, value - 1));
+      if (key.backspace || key.delete) {
+        setCommandError(null);
+        return setCommandInput((value) => value.slice(0, -1));
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setCommandError(null);
+        setCommandHighlight(0);
+        setCommandInput((value) => value + input);
+      }
+      return;
+    }
+
     if (typing) {
-      // В режиме ввода клавиши принадлежат строке: иначе «q» в запросе набрать
-      // было бы нельзя.
       if (key.escape || key.return) return setTyping(false);
       if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
       if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
@@ -384,11 +708,24 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
 
     if (showHelp) return setShowHelp(false);
 
+    // Слэш открывает строку команд со списком: это и есть ответ на вопрос
+    // «что тут вообще можно».
+    if (input === "/" || input === ":") {
+      setCommandOpen(true);
+      setCommandInput("");
+      setCommandHighlight(0);
+      setCommandError(null);
+      return;
+    }
+
     if (input === "q" || (key.ctrl && input === "c")) {
       void onExit().then(() => exit());
       return;
     }
     if (input === "?") return setShowHelp(true);
+
+    // Выход из карточки — туда же, откуда пришли.
+    if (key.escape && drill) return setDrill(null);
 
     if (key.tab) {
       const order: Focus[] = ["sidebar", "list", "details"];
@@ -396,10 +733,12 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       setFocus(order[(index + (key.shift ? order.length - 1 : 1)) % order.length] ?? "list");
       return;
     }
-    if (input === "h") return setFocus("sidebar");
+    if (input === "h") {
+      if (drill) return setDrill(null);
+      return setFocus("sidebar");
+    }
     if (input === "l") return setFocus("list");
 
-    // Прямой переход цифрой — самый быстрый путь, когда знаешь, куда идёшь.
     const digit = Number.parseInt(input, 10);
     if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(9, SECTIONS.length)) {
       return openSection(digit - 1);
@@ -411,12 +750,14 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     if (key.pageUp) return moveSelection(-10);
     if (input === "g") {
       if (focus === "sidebar") setSectionIndex(0);
+      else if (drill) setDrill((previous) => (previous ? { ...previous, selected: 0 } : previous));
       else setSelectedFor(activeSection, 0);
       return;
     }
     if (input === "G") {
       if (focus === "sidebar") setSectionIndex(SECTIONS.length - 1);
-      else setSelectedFor(activeSection, rows.length - 1);
+      else if (drill) setDrill((previous) => (previous ? { ...previous, selected: previous.rows.length - 1 } : previous));
+      else setSelectedFor(activeSection, sectionRows.length - 1);
       return;
     }
 
@@ -426,33 +767,25 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
       return;
     }
 
-    // Плеер слушается из любой панели: музыка важнее навигации. Сочетания
-    // намеренно те же, что на сайте (src/hooks/usePlayerKeyboard.ts) — space,
-    // ←/→ на 30 секунд, m, n, p.
+    // Плеер слушается из любой панели. Сочетания те же, что на сайте
+    // (src/hooks/usePlayerKeyboard.ts): space, ←/→ на 30 секунд, m, n, p.
     if (input === " ") return void backend.setPaused(!status.paused);
     if (input === "r") return void playRadio();
     if (input === "m" && backend.canSetVolume) {
-      // Прежнюю громкость помним, иначе включение звука ставило бы её в 100
-      // и било бы по ушам того, кто слушал тихо.
       setVolume((value) => {
         const next = value === 0 ? mutedFrom || 100 : 0;
-        setMutedFrom(value === 0 ? 0 : value);
+        setMutedFrom(value === 0 ? mutedFrom : value);
         void backend.setVolume(next);
         return next;
       });
       return;
     }
     if (input === "n" || input === "p") {
-      // Очереди пока нет: честно говорим об этом вместо молчаливого бездействия.
       say("Очередь появится позже — пока выбирайте в списке");
       return;
     }
-    if (input === "/") {
-      const index = SECTIONS.findIndex((candidate) => candidate.id === "search");
-      return openSection(index);
-    }
-    if (key.rightArrow && backend.canSeek && now?.kind === "show") void backend.seek(30, "relative");
-    if (key.leftArrow && backend.canSeek && now?.kind === "show") void backend.seek(-30, "relative");
+    if (key.rightArrow && backend.canSeek && now?.kind !== "radio") void backend.seek(30, "relative");
+    if (key.leftArrow && backend.canSeek && now?.kind !== "radio") void backend.seek(-30, "relative");
     if ((input === "+" || input === "=") && backend.canSetVolume) {
       setVolume((value) => {
         const next = Math.min(130, value + 5);
@@ -469,30 +802,31 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
     }
   });
 
-  // ── Раскладка ──
+  // ── Отрисовка ──
 
   const playingIndex = useMemo(() => {
+    if (drill) {
+      return drill.rows.findIndex((row) => row.kind === "show" && row.id === now?.showId);
+    }
     if (activeSection === "radio" && radioNow) {
-      return (rows as RadioItem[]).findIndex((item) => item.played_at === radioNow.played_at);
+      return (sectionRows as RadioItem[]).findIndex((item) => item.played_at === radioNow.played_at);
     }
     if (!now?.showId) return -1;
     if (activeSection === "shows" || activeSection === "search") {
-      return (rows as Show[]).findIndex((show) => show.id === now.showId);
+      return (sectionRows as Show[]).findIndex((show) => show.id === now.showId);
     }
-    if (activeSection === "likes") return (rows as LikedShow[]).findIndex((show) => show.id === now.showId);
+    if (activeSection === "likes") return (sectionRows as LikedShow[]).findIndex((show) => show.id === now.showId);
     return -1;
-  }, [activeSection, rows, radioNow, now?.showId]);
+  }, [drill, activeSection, sectionRows, radioNow, now?.showId]);
 
   const details: Details | null = useMemo(() => {
-    const row = rows[selected];
-    if (!row) return null;
+    if (!rows[selected]) return null;
 
     if (detailShow) {
-      const isPlaying = now?.showId === detailShow.id;
       const artistLine = detailShow.artists.map((artist) => artist.name).join(", ");
       return {
         title: detailShow.title ?? "Без названия",
-        subtitle: sameText(artistLine, detailShow.title) ? null : artistLine || null,
+        subtitle: dropIfSame(artistLine, detailShow.title),
         facts: [
           ["длительность", formatDuration(detailShow.duration)],
           ["опубликован", detailShow.published_at?.slice(0, 10) ?? "—"],
@@ -501,11 +835,11 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         tracklist,
         // Подсветка трека — только у ИГРАЮЩЕГО выпуска: у чужого позиция плеера
         // к его треклисту отношения не имеет.
-        playingTrack: isPlaying ? currentTrackIndex(tracklist, status.positionSec) : -1,
+        playingTrack: now?.showId === detailShow.id ? currentTrackIndex(tracklist, status.positionSec) : -1,
       };
     }
-    return describeRow(activeSection, row);
-  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection]);
+    return describeRow(activeSection, drill, rows[selected]);
+  }, [rows, selected, detailShow, tracklist, now?.showId, status.positionSec, activeSection, drill]);
 
   const info = useMemo(() => {
     if (now?.kind === "radio") {
@@ -517,25 +851,41 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         position: elapsedSec(radioNow),
         total: radioNow?.duration ?? null,
         live: true,
+        badge: null as string | null,
       };
     }
-    if (now?.kind === "show") {
+    if (now) {
+      // У превью своя шкала: показываем прогресс внутри окна, иначе полоса
+      // стоит почти на нуле и ничего не сообщает.
+      const start = now.previewEndSec !== null && now.totalSec ? now.previewEndSec - now.totalSec : 0;
+      const position = status.positionSec === null ? null : Math.max(0, status.positionSec - start);
       return {
         title: now.title,
         subtitle: now.subtitle,
-        position: status.positionSec,
+        position: now.previewEndSec === null ? status.positionSec : position,
         total: status.durationSec ?? now.totalSec,
         live: false,
+        badge: now.badge,
       };
     }
-    return { title: "Ничего не играет", subtitle: null, position: null, total: null, live: false };
+    return { title: "Ничего не играет", subtitle: null, position: null, total: null, live: false, badge: null };
   }, [now, radioNow, status]);
 
   if (showHelp) return <HelpOverlay width={width} />;
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
-  const bodyHeight = Math.max(8, height - 6);
+  const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6));
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
+
+  const listTitle = drill
+    ? `${drill.title} — Esc назад`
+    : activeSection === "search"
+      ? `Поиск: ${query || "…"}${typing ? "▌" : ""}`
+      : loading === activeSection
+        ? `${section.listTitle} — загружаем…`
+        : activeSection === "radio"
+          ? `${section.listTitle} · только для справки`
+          : section.listTitle;
 
   return (
     <Box flexDirection="column" width={width}>
@@ -557,15 +907,9 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
 
         <Box flexDirection="column" width={contentWidth}>
           <ListPanel<unknown>
-            title={
-              activeSection === "search"
-                ? `Поиск: ${query || "…"}${typing ? "▌" : ""}`
-                : loading === activeSection
-                  ? `${section.listTitle} — загружаем…`
-                  : section.listTitle
-            }
+            title={listTitle}
             rows={rows}
-            columns={section.columns as never}
+            columns={(drill ? DRILL_COLUMNS : section.columns) as never}
             selected={selected}
             playing={playingIndex}
             height={listHeight}
@@ -583,6 +927,16 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         </Box>
       </Box>
 
+      {commandOpen ? (
+        <CommandLine
+          input={commandInput}
+          suggestions={suggestions}
+          highlighted={commandHighlight}
+          width={width}
+          error={commandError}
+        />
+      ) : null}
+
       <PlayerBar
         title={info.title}
         subtitle={info.subtitle}
@@ -592,18 +946,21 @@ export function App({ backend, backendName, accessToken, userId, onExit }: AppPr
         state={status}
         backend={backendName}
         volume={volume}
-        badge={null}
+        badge={info.badge}
         width={width}
       />
 
       <Box paddingX={1}>
         <Text color={message ? theme.paused : theme.muted}>
-          {message ??
-            "Tab/h/l — панели · j/k — список · Enter — играть · space — пауза · / — поиск · ? — помощь · q — выход"}
+          {message ?? "/ — команды · Tab — панели · j/k — список · Enter — играть · space — пауза · ? — помощь · q — выход"}
         </Text>
       </Box>
     </Box>
   );
+}
+
+function clampSize(value: number | undefined, fallback: number, minimum: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 
 /** Подзаголовок, повторяющий заголовок, — шум: в этом случае его нет. */
@@ -612,25 +969,34 @@ function dropIfSame(value: string | null | undefined, title: string | null | und
   return !text || sameText(text, title) ? null : text;
 }
 
-/** Одинаковы ли строки с точностью до регистра и пробелов. */
 function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
   return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 }
 
-function clampSize(value: number | undefined, fallback: number, minimum: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= minimum ? value : fallback;
-}
-
-/** Строки, которые сами по себе являются выпуском. */
-function asShow(sectionId: SectionId, row: unknown): Show | null {
-  if (!row) return null;
+/** Строки, которые сами по себе являются выпуском (у них есть треклист). */
+function asShow(sectionId: SectionId, drill: Drill | null, row: unknown): Show | null {
+  if (!row || drill) return null;
   if (sectionId === "shows" || sectionId === "search") return row as Show;
   return null;
 }
 
-/** Подробности для сущностей без треклиста — из того, что уже есть в списке. */
-function describeRow(sectionId: SectionId, row: unknown): Details | null {
+/** Подробности для всего, у чего нет треклиста — из того, что уже в списке. */
+function describeRow(sectionId: SectionId, drill: Drill | null, row: unknown): Details | null {
   const empty = { tracklist: [] as TracklistItem[], playingTrack: -1 };
+
+  if (drill) {
+    const item = row as DrillRow;
+    return {
+      title: item.title,
+      subtitle: dropIfSame(item.subtitle, item.title),
+      facts: [
+        ["длительность", formatDuration(item.duration)],
+        ["что это", item.kind === "track" ? "трек релиза" : "выпуск"],
+      ],
+      description: null,
+      ...empty,
+    };
+  }
 
   switch (sectionId) {
     case "artists": {

@@ -22,14 +22,18 @@ export interface Artist {
 }
 
 export async function listArtists(
-  options: { limit?: number; accessToken?: string | null } = {},
+  options: { limit?: number; accessToken?: string | null; residentsOnly?: boolean } = {},
 ): Promise<Artist[]> {
   const params = new URLSearchParams({
     select: "id,public_id,slug,name,bio,is_resident",
     is_active: "eq.true",
-    order: "is_resident.desc.nullslast,name.asc",
+    order: "name.asc",
     limit: String(options.limit ?? 200),
   });
+  // Резидент — отдельный статус, а не «первый в сортировке». Раздел сайта
+  // /browse/residents показывает именно их, и смешивать туда весь каталог
+  // артистов значит подменять смысл раздела.
+  if (options.residentsOnly !== false) params.append("is_resident", "eq.true");
   const rows = (await request(restUrl(`artists?${params}`), {
     headers: headers(options.accessToken ?? null),
   })) as Artist[] | null;
@@ -72,12 +76,19 @@ export interface Host {
 }
 
 /** Авторы (резиденты). public_id у них нет — ссылка всегда по слагу. */
-export async function listHosts(accessToken: string | null = null, limit = 200): Promise<Host[]> {
+export async function listHosts(
+  accessToken: string | null = null,
+  limit = 200,
+  verifiedOnly = true,
+): Promise<Host[]> {
   const params = new URLSearchParams({
     select: "id,slug,name,bio,is_verified",
     order: "name.asc",
     limit: String(limit),
   });
+  // hosts содержит и неактивные, и служебные записи — без фильтра список
+  // превращается в свалку, по которой невозможно найти живого автора.
+  if (verifiedOnly) params.append("is_verified", "eq.true");
   const rows = (await request(restUrl(`hosts?${params}`), {
     headers: headers(accessToken),
   })) as Host[] | null;
@@ -145,4 +156,23 @@ export async function showsByArtist(
         show !== null && show.status !== "archived",
     )
     .map(({ id, title, duration }) => ({ id, title, duration }));
+}
+
+/** Выпуски автора — для перехода внутрь карточки. */
+export async function showsByHost(
+  hostId: string,
+  accessToken: string | null = null,
+  limit = 100,
+): Promise<Array<{ id: string; title: string | null; duration: number | null; published_at: string | null }>> {
+  const params = new URLSearchParams({
+    select: "id,title,duration,published_at",
+    host_id: `eq.${hostId}`,
+    status: "eq.published",
+    order: "published_at.desc.nullslast",
+    limit: String(limit),
+  });
+  const rows = (await request(restUrl(`shows_v2?${params}`), {
+    headers: headers(accessToken),
+  })) as Array<{ id: string; title: string | null; duration: number | null; published_at: string | null }> | null;
+  return rows ?? [];
 }

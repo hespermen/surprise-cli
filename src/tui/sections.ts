@@ -20,7 +20,7 @@ import {
   type PlaylistSummary,
 } from "../api/library.ts";
 import { listShows, type Show } from "../api/shows.ts";
-import type { RadioItem } from "../api/radio.ts";
+import { formatRadioItem, type RadioItem } from "../api/radio.ts";
 import { formatDuration } from "../lib/format.ts";
 
 export type SectionId =
@@ -71,11 +71,13 @@ export const SECTIONS: ReadonlyArray<SectionSpec<never>> = [
     id: "radio",
     label: "Эфир",
     group: "station",
-    listTitle: "Эфир — что играет и что играло",
+    listTitle: "Эфир — расписание",
     emptyHint: "Расписание пока недоступно",
     columns: [
-      { header: "", width: 6, value: () => "" },
-      { header: "Выпуск", width: 0, flex: true, value: (item: RadioItem) => item.title ?? "—" },
+      // Расписание информационное: по нему не запускают, поэтому колонка «когда»
+      // важнее любой кнопки — она отвечает на единственный вопрос к этому списку.
+      { header: "Когда", width: 7, value: (item: RadioItem & { when?: string }) => item.when ?? "" },
+      { header: "Выпуск", width: 0, flex: true, value: (item: RadioItem) => formatRadioItem(item) },
       { header: "Длит.", width: 8, value: (item: RadioItem) => formatDuration(item.duration) },
     ],
     // Эфир грузится в App отдельно: он обновляется по таймеру и нужен ещё и
