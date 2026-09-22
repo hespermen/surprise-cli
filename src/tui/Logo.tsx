@@ -1,9 +1,7 @@
 /**
  * Логотип станции в шапке.
  *
- * Рисуется блочными символами, а не картинкой: терминал картинок не показывает,
- * а из тех, что показывают, каждый делает это по-своему (kitty, iTerm2, sixel —
- * три несовместимых протокола). Блоки работают везде одинаково.
+ * Сам рисунок живёт в ui/logo.ts — его же печатает простой `surprise radio`.
  *
  * Логотип СТАТИЧЕН, и это решение, а не упрощение.
  *
@@ -20,95 +18,19 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { LOGO_HEIGHT, logoRows } from "../ui/logo.ts";
 import { colorEnabled } from "../ui/term.ts";
 import { theme } from "./theme.ts";
 
-/**
- * Блочный шрифт, пять строк высотой.
- *
- * Только те символы, что есть в названии станции: полный алфавит здесь был бы
- * мёртвым кодом, а его никто не проверяет.
- */
-const GLYPHS: Record<string, readonly string[]> = {
-  S: ["███", "█  ", "███", "  █", "███"],
-  U: ["█ █", "█ █", "█ █", "█ █", "███"],
-  R: ["███", "█ █", "███", "█ █", "█ █"],
-  P: ["███", "█ █", "███", "█  ", "█  "],
-  I: ["███", " █ ", " █ ", " █ ", "███"],
-  E: ["███", "█  ", "███", "█  ", "███"],
-  F: ["███", "█  ", "███", "█  ", "█  "],
-  M: ["█ █", "███", "███", "█ █", "█ █"],
-  ".": ["   ", "   ", "   ", "   ", " █ "],
-  " ": ["  ", "  ", "  ", "  ", "  "],
-};
-
-const WORDMARK = "SURPRISE.FM";
-export const LOGO_HEIGHT = 5;
-
-/**
- * Знак станции: залитый квадрат с тёмной буквой внутри.
- *
- * Собирается из пиксельной сетки, а не пишется готовыми символами. Причина в
- * высоте: на логотип отведено пять строк, а букве нужны поля сверху и снизу,
- * иначе она упирается в край квадрата. Половинные блоки дают десять пиксельных
- * рядов в тех же пяти строках — этого хватает и на букву, и на поля.
- *
- * Единица — залитая часть квадрата, ноль — сама буква (она тёмная, как на
- * фирменном знаке).
- */
-const MARK_PIXELS = [
-  "11111111",
-  "10000001",
-  "10000001",
-  "10111111",
-  "10000001",
-  "10000001",
-  "11111101",
-  "10000001",
-  "10000001",
-  "11111111",
-] as const;
-
-/** Пара пиксельных рядов в одну строку символов. */
-function packRows(top: string, bottom: string): string {
-  let out = "";
-  for (let column = 0; column < top.length; column += 1) {
-    const upper = top[column] === "1";
-    const lower = bottom[column] === "1";
-    // Полный блок, верхняя половина, нижняя половина, пусто.
-    out += upper && lower ? "█" : upper ? "▀" : lower ? "▄" : " ";
-  }
-  return out;
-}
-
-const MARK: string[] = [];
-for (let row = 0; row < MARK_PIXELS.length; row += 2) {
-  MARK.push(packRows(MARK_PIXELS[row]!, MARK_PIXELS[row + 1]!));
-}
-
-/** Сборка строк логотипа: знак, пробел, слово. */
-function buildRows(): string[] {
-  const rows: string[] = [];
-  for (let line = 0; line < LOGO_HEIGHT; line += 1) {
-    const word = [...WORDMARK]
-      .map((char) => GLYPHS[char]?.[line] ?? "   ")
-      .join(" ");
-    rows.push(`${MARK[line] ?? ""}  ${word}`);
-  }
-  return rows;
-}
-
-const ROWS = buildRows();
-const LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
+export { LOGO_HEIGHT };
 
 export function Logo({ width }: { width: number }): React.ReactElement | null {
-  // Не влезает — не показываем: обрезанный логотип выглядит как сломанный
-  // интерфейс.
-  if (width < LOGO_WIDTH + 2) return null;
+  const rows = logoRows(width);
+  if (!rows) return null;
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {ROWS.map((row, index) => (
+      {rows.map((row, index) => (
         // Одна строка — один элемент. Раньше здесь был элемент на каждый символ,
         // и их было больше, чем во всём остальном интерфейсе.
         <Text key={index} bold color={colorEnabled() ? theme.muted : undefined}>

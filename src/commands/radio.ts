@@ -22,8 +22,9 @@ import { formatDuration, progressBar, truncate } from "../lib/format.ts";
 import { getSessionId } from "../lib/ids.ts";
 import { getValidSession } from "../net/auth.ts";
 import { NoAudioBackendError, pickBackend } from "../player/detect.ts";
+import { logoRows } from "../ui/logo.ts";
 import { startPlayback, stateMark } from "../ui/playback.ts";
-import { bold, cyan, dim, green, red, yellow } from "../ui/term.ts";
+import { bold, cyan, dim, green, red, terminalWidth, yellow } from "../ui/term.ts";
 
 export async function radioCommand(argv: readonly string[]): Promise<number> {
   const asJson = argv.includes("--json");
@@ -96,7 +97,13 @@ export async function radioCommand(argv: readonly string[]): Promise<number> {
     return playback.done;
   }
 
-  playback.say(`${green("▶")} ${bold("SURPRISE.FM")} ${dim(streamUrl)}`);
+  // Вместо адреса потока — логотип станции.
+  //
+  // Адрес был отладочным следом: слушателю он ничего не говорит, а строку
+  // занимал самую заметную — первую после запуска. Кому он нужен по делу,
+  // берёт его из `surprise radio --json`, где он и должен быть.
+  const logo = logoRows(terminalWidth());
+  playback.say(logo ? dim(logo.join("\n")) : `${green("▶")} ${bold("SURPRISE.FM")}`);
   if (degraded) {
     playback.say(`${yellow("!")} Играем через ${name}: без плавной перемотки и регулировки громкости.`);
   }

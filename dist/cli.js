@@ -5928,6 +5928,61 @@ var init_radio = __esm({
   }
 });
 
+// src/ui/logo.ts
+function packRows(top, bottom) {
+  let out = "";
+  for (let column = 0; column < top.length; column += 1) {
+    const upper = top[column] === "1";
+    const lower = bottom[column] === "1";
+    out += upper && lower ? "\u2588" : upper ? "\u2580" : lower ? "\u2584" : " ";
+  }
+  return out;
+}
+function logoRows(width2) {
+  return width2 >= LOGO_WIDTH + 2 ? LOGO_ROWS : null;
+}
+var GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, LOGO_ROWS, LOGO_WIDTH;
+var init_logo = __esm({
+  "src/ui/logo.ts"() {
+    "use strict";
+    GLYPHS = {
+      S: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "  \u2588", "\u2588\u2588\u2588"],
+      U: ["\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588\u2588\u2588"],
+      R: ["\u2588\u2588\u2588", "\u2588 \u2588", "\u2588\u2588\u2588", "\u2588 \u2588", "\u2588 \u2588"],
+      P: ["\u2588\u2588\u2588", "\u2588 \u2588", "\u2588\u2588\u2588", "\u2588  ", "\u2588  "],
+      I: ["\u2588\u2588\u2588", " \u2588 ", " \u2588 ", " \u2588 ", "\u2588\u2588\u2588"],
+      E: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588"],
+      F: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "\u2588  ", "\u2588  "],
+      M: ["\u2588 \u2588", "\u2588\u2588\u2588", "\u2588\u2588\u2588", "\u2588 \u2588", "\u2588 \u2588"],
+      ".": ["   ", "   ", "   ", "   ", " \u2588 "],
+      " ": ["  ", "  ", "  ", "  ", "  "]
+    };
+    WORDMARK = "SURPRISE.FM";
+    LOGO_HEIGHT = 5;
+    MARK_PIXELS = [
+      "11111111",
+      "10000001",
+      "10000001",
+      "10111111",
+      "10000001",
+      "10000001",
+      "11111101",
+      "10000001",
+      "10000001",
+      "11111111"
+    ];
+    MARK = [];
+    for (let row = 0; row < MARK_PIXELS.length; row += 2) {
+      MARK.push(packRows(MARK_PIXELS[row], MARK_PIXELS[row + 1]));
+    }
+    LOGO_ROWS = Array.from({ length: LOGO_HEIGHT }, (_, line) => {
+      const word = [...WORDMARK].map((char) => GLYPHS[char]?.[line] ?? "   ").join(" ");
+      return `${MARK[line] ?? ""}  ${word}`;
+    });
+    LOGO_WIDTH = Math.max(...LOGO_ROWS.map((row) => [...row].length));
+  }
+});
+
 // node_modules/react/cjs/react.production.min.js
 var require_react_production_min = __commonJS({
   "node_modules/react/cjs/react.production.min.js"(exports) {
@@ -23230,8 +23285,8 @@ function computeLayout({
   const showMeter = hasLevels && budget - fixedRows - meterHeight >= MIN_BODY + 2;
   const meterRows = showMeter ? meterHeight : 0;
   const showLogo = !commandOpen && budget - fixedRows - meterRows - logoHeight >= MIN_BODY + 4;
-  const logoRows = showLogo ? logoHeight : 0;
-  const bodyHeight = Math.max(MIN_BODY, budget - fixedRows - meterRows - logoRows);
+  const logoRows2 = showLogo ? logoHeight : 0;
+  const bodyHeight = Math.max(MIN_BODY, budget - fixedRows - meterRows - logoRows2);
   const listBox = Math.max(MIN_LIST_BOX, Math.round(bodyHeight * 0.55));
   const detailsBox = Math.max(MIN_DETAILS_BOX, bodyHeight - listBox);
   return {
@@ -23248,7 +23303,7 @@ function computeLayout({
     // bodyHeight. Разойдись они из-за нижних ограничений — и итог получился бы
     // меньше настоящего кадра, то есть проверка на вместимость прошла бы там,
     // где интерфейс уже не помещается.
-    totalRows: logoRows + listBox + detailsBox + meterRows + fixedRows
+    totalRows: logoRows2 + listBox + detailsBox + meterRows + fixedRows
   };
 }
 var PLAYER_ROWS, HINT_ROWS, COMMAND_CHROME, COMMAND_MAX_SUGGESTIONS, COMMAND_MIN_SUGGESTIONS, MIN_LIST_BOX, MIN_DETAILS_BOX, MIN_BODY, SPARE_ROW, MIN_USABLE_ROWS;
@@ -23269,72 +23324,25 @@ var init_layout = __esm({
 });
 
 // src/tui/Logo.tsx
-function packRows(top, bottom) {
-  let out = "";
-  for (let column = 0; column < top.length; column += 1) {
-    const upper = top[column] === "1";
-    const lower = bottom[column] === "1";
-    out += upper && lower ? "\u2588" : upper ? "\u2580" : lower ? "\u2584" : " ";
-  }
-  return out;
-}
-function buildRows() {
-  const rows = [];
-  for (let line = 0; line < LOGO_HEIGHT; line += 1) {
-    const word = [...WORDMARK].map((char) => GLYPHS[char]?.[line] ?? "   ").join(" ");
-    rows.push(`${MARK[line] ?? ""}  ${word}`);
-  }
-  return rows;
-}
 function Logo({ width: width2 }) {
-  if (width2 < LOGO_WIDTH + 2) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => (
+  const rows = logoRows(width2);
+  if (!rows) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: rows.map((row, index) => (
     // Одна строка — один элемент. Раньше здесь был элемент на каждый символ,
     // и их было больше, чем во всём остальном интерфейсе.
     /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: colorEnabled() ? theme.muted : void 0, children: row }, index)
   )) });
 }
-var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH;
+var import_react29, import_jsx_runtime8;
 var init_Logo = __esm({
   async "src/tui/Logo.tsx"() {
     "use strict";
     await init_build2();
     import_react29 = __toESM(require_react(), 1);
+    init_logo();
     init_term();
     init_theme();
     import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
-    GLYPHS = {
-      S: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "  \u2588", "\u2588\u2588\u2588"],
-      U: ["\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588 \u2588", "\u2588\u2588\u2588"],
-      R: ["\u2588\u2588\u2588", "\u2588 \u2588", "\u2588\u2588\u2588", "\u2588 \u2588", "\u2588 \u2588"],
-      P: ["\u2588\u2588\u2588", "\u2588 \u2588", "\u2588\u2588\u2588", "\u2588  ", "\u2588  "],
-      I: ["\u2588\u2588\u2588", " \u2588 ", " \u2588 ", " \u2588 ", "\u2588\u2588\u2588"],
-      E: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588"],
-      F: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "\u2588  ", "\u2588  "],
-      M: ["\u2588 \u2588", "\u2588\u2588\u2588", "\u2588\u2588\u2588", "\u2588 \u2588", "\u2588 \u2588"],
-      ".": ["   ", "   ", "   ", "   ", " \u2588 "],
-      " ": ["  ", "  ", "  ", "  ", "  "]
-    };
-    WORDMARK = "SURPRISE.FM";
-    LOGO_HEIGHT = 5;
-    MARK_PIXELS = [
-      "11111111",
-      "10000001",
-      "10000001",
-      "10111111",
-      "10000001",
-      "10000001",
-      "11111101",
-      "10000001",
-      "10000001",
-      "11111111"
-    ];
-    MARK = [];
-    for (let row = 0; row < MARK_PIXELS.length; row += 2) {
-      MARK.push(packRows(MARK_PIXELS[row], MARK_PIXELS[row + 1]));
-    }
-    ROWS = buildRows();
-    LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
   }
 });
 
@@ -26376,6 +26384,7 @@ init_config();
 init_format();
 init_ids();
 init_auth();
+init_logo();
 init_term();
 async function radioCommand(argv) {
   const asJson = argv.includes("--json");
@@ -26437,7 +26446,8 @@ async function radioCommand(argv) {
     playback.finish(1);
     return playback.done;
   }
-  playback.say(`${green("\u25B6")} ${bold("SURPRISE.FM")} ${dim(streamUrl)}`);
+  const logo = logoRows(terminalWidth());
+  playback.say(logo ? dim(logo.join("\n")) : `${green("\u25B6")} ${bold("SURPRISE.FM")}`);
   if (degraded) {
     playback.say(`${yellow("!")} \u0418\u0433\u0440\u0430\u0435\u043C \u0447\u0435\u0440\u0435\u0437 ${name}: \u0431\u0435\u0437 \u043F\u043B\u0430\u0432\u043D\u043E\u0439 \u043F\u0435\u0440\u0435\u043C\u043E\u0442\u043A\u0438 \u0438 \u0440\u0435\u0433\u0443\u043B\u0438\u0440\u043E\u0432\u043A\u0438 \u0433\u0440\u043E\u043C\u043A\u043E\u0441\u0442\u0438.`);
   }
