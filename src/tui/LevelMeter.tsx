@@ -16,12 +16,9 @@ import React from "react";
 import {
   METER_CHANNEL_ROWS,
   METER_FLOOR_DB,
-  METER_GLYPHS,
   METER_MAX_SEGMENTS,
-  litSegments,
+  meterRuns,
   scaleRow,
-  segmentDb,
-  zoneOf,
 } from "../player/meter.ts";
 import { theme } from "./theme.ts";
 
@@ -31,16 +28,8 @@ function channelLabel(index: number, total: number): string {
   return index === 0 ? "L" : "R";
 }
 
-function zoneColor(db: number): string {
-  switch (zoneOf(db)) {
-    case "over":
-      return "red";
-    case "warn":
-      return "yellow";
-    default:
-      return "green";
-  }
-}
+/** Цвета зон: запас, подход к нулю, перегрузка. */
+const ZONE_COLORS = { safe: "green", warn: "yellow", over: "red" } as const;
 
 function MeterRow({
   label,
@@ -53,26 +42,17 @@ function MeterRow({
   peakDb: number;
   segments: number;
 }): React.ReactElement {
-  const lit = litSegments(db, segments);
-  // Метка пика — отдельный сегмент поверх полосы: мгновенный столбик скачет
-  // слишком быстро, чтобы разглядеть максимум.
-  const peakAt = Math.max(0, litSegments(peakDb, segments) - 1);
-
-  const cells = Array.from({ length: segments }, (_, index) => {
-    const cellDb = segmentDb(index, segments);
-    if (index === peakAt && peakAt >= lit) return { glyph: METER_GLYPHS.peak, color: zoneColor(cellDb), dim: false };
-    if (index < lit) return { glyph: METER_GLYPHS.lit, color: zoneColor(cellDb), dim: false };
-    // Погашенные деления оставляем видимыми: по ним читается, сколько ещё
-    // запаса, — пустое место этого не показывает.
-    return { glyph: METER_GLYPHS.dim, color: theme.muted, dim: true };
-  });
+  // Полоса собирается однотонными кусками, а не по делению на элемент: кусков
+  // выходит пять вместо сотни с лишним, и перерисовывается строка заметно
+  // спокойнее. Разбиение и его неизменная ширина проверяются тестами.
+  const runs = meterRuns(db, peakDb, segments);
 
   return (
     <Box>
       <Text color={theme.muted}>{label} </Text>
-      {cells.map((cell, index) => (
-        <Text key={index} color={cell.color} bold={!cell.dim}>
-          {cell.glyph}
+      {runs.map((run, index) => (
+        <Text key={index} color={run.zone ? ZONE_COLORS[run.zone] : undefined} bold={!!run.zone}>
+          {run.text}
         </Text>
       ))}
     </Box>

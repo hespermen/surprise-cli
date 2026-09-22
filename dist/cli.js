@@ -23371,7 +23371,40 @@ function scaleRow(segments, marks = [-30, -20, -10, -5, 0]) {
   }
   return row.join("");
 }
-var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_MAX_SEGMENTS, METER_FLOOR_DB, METER_GLYPHS;
+function segmentAtDb(db, segments) {
+  if (segments <= 1) return 0;
+  const ratio = (db - METER_MIN_DB) / (METER_MAX_DB - METER_MIN_DB);
+  return Math.max(0, Math.min(segments, Math.ceil(ratio * (segments - 1))));
+}
+function meterRuns(db, peakDb, segments) {
+  if (segments <= 0) return [];
+  const lit = litSegments(db, segments);
+  const runs = [];
+  const zones = [
+    { zone: "safe", end: segmentAtDb(-6, segments) },
+    { zone: "warn", end: segmentAtDb(-1, segments) },
+    { zone: "over", end: segments }
+  ];
+  let cursor = 0;
+  for (const { zone, end } of zones) {
+    const stop = Math.min(lit, end);
+    if (stop > cursor) {
+      runs.push({ text: METER_GLYPHS.lit.repeat(stop - cursor), zone });
+      cursor = stop;
+    }
+  }
+  const peakAt = Math.max(0, litSegments(peakDb, segments) - 1);
+  if (peakAt >= lit && peakAt < segments) {
+    if (peakAt > lit) runs.push({ text: METER_BLANK.repeat(peakAt - lit), zone: null });
+    runs.push({ text: METER_GLYPHS.peak, zone: zoneOf(segmentDb(peakAt, segments)) });
+    cursor = peakAt + 1;
+  } else {
+    cursor = lit;
+  }
+  if (segments > cursor) runs.push({ text: METER_BLANK.repeat(segments - cursor), zone: null });
+  return runs;
+}
+var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_MAX_SEGMENTS, METER_FLOOR_DB, METER_GLYPHS, METER_BLANK;
 var init_meter = __esm({
   "src/player/meter.ts"() {
     "use strict";
@@ -23384,11 +23417,10 @@ var init_meter = __esm({
     METER_GLYPHS = {
       /** Горящее деление. */
       lit: "\u2588",
-      /** Погашенное: тонкая дорожка, по которой видно оставшийся запас. */
-      dim: "\u2500",
       /** Метка удержания пика. */
       peak: "\u2503"
     };
+    METER_BLANK = " ";
   }
 });
 
@@ -23397,36 +23429,19 @@ function channelLabel(index, total) {
   if (total === 1) return index === 0 ? "M" : " ";
   return index === 0 ? "L" : "R";
 }
-function zoneColor(db) {
-  switch (zoneOf(db)) {
-    case "over":
-      return "red";
-    case "warn":
-      return "yellow";
-    default:
-      return "green";
-  }
-}
 function MeterRow({
   label,
   db,
   peakDb,
   segments
 }) {
-  const lit = litSegments(db, segments);
-  const peakAt = Math.max(0, litSegments(peakDb, segments) - 1);
-  const cells = Array.from({ length: segments }, (_, index) => {
-    const cellDb = segmentDb(index, segments);
-    if (index === peakAt && peakAt >= lit) return { glyph: METER_GLYPHS.peak, color: zoneColor(cellDb), dim: false };
-    if (index < lit) return { glyph: METER_GLYPHS.lit, color: zoneColor(cellDb), dim: false };
-    return { glyph: METER_GLYPHS.dim, color: theme.muted, dim: true };
-  });
+  const runs = meterRuns(db, peakDb, segments);
   return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Box_default, { children: [
     /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Text, { color: theme.muted, children: [
       label,
       " "
     ] }),
-    cells.map((cell, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: cell.color, bold: !cell.dim, children: cell.glyph }, index))
+    runs.map((run2, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Text, { color: run2.zone ? ZONE_COLORS[run2.zone] : void 0, bold: !!run2.zone, children: run2.text }, index))
   ] });
 }
 function LevelMeter({
@@ -23459,7 +23474,7 @@ function LevelMeter({
     ] })
   ] });
 }
-var import_react30, import_jsx_runtime9;
+var import_react30, import_jsx_runtime9, ZONE_COLORS;
 var init_LevelMeter = __esm({
   async "src/tui/LevelMeter.tsx"() {
     "use strict";
@@ -23468,6 +23483,7 @@ var init_LevelMeter = __esm({
     init_meter();
     init_theme();
     import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+    ZONE_COLORS = { safe: "green", warn: "yellow", over: "red" };
   }
 });
 

@@ -6,6 +6,7 @@ import {
   METER_FLOOR_DB,
   METER_GLYPHS,
   METER_GLYPH_RANGE,
+  meterRuns,
   METER_MAX_DB,
   METER_MIN_DB,
   METER_ROWS,
@@ -146,40 +147,61 @@ test("символы полосы — из сетки, которую терми
   }
 });
 
-/** Полоса обязана быть одной ширины при любой громкости. */
+/**
+ * Полоса обязана занимать одинаковое место при любой громкости.
+ *
+ * Разойдись ширина хоть на колонку — строка начнёт дёргаться в такт музыке,
+ * а при переносе на вторую строку съедет и всё, что под ней.
+ */
 test("ширина полосы не зависит от уровня", async () => {
   const { default: stringWidth } = await import("string-width");
-  const segments = 64;
 
-  const widths = new Set<number>();
-  for (let db = METER_FLOOR_DB; db <= METER_MAX_DB; db += 0.5) {
-    const lit = litSegments(db, segments);
-    const peakAt = Math.max(0, litSegments(db, segments) - 1);
-    const row = Array.from({ length: segments }, (_, index) =>
-      index === peakAt && peakAt >= lit
-        ? METER_GLYPHS.peak
-        : index < lit
-          ? METER_GLYPHS.lit
-          : METER_GLYPHS.dim,
-    ).join("");
-    widths.add(stringWidth(row));
+  for (const segments of [12, 64, 117, 160]) {
+    const widths = new Set<number>();
+    for (let db = METER_FLOOR_DB; db <= METER_MAX_DB; db += 0.5) {
+      const text = meterRuns(db, db + 6, segments)
+        .map((run) => run.text)
+        .join("");
+      widths.add(stringWidth(text));
+    }
+    assert.deepEqual([...widths], [segments], `${segments} делений: ширина гуляет`);
   }
-
-  assert.deepEqual([...widths], [segments], `ширина гуляет: ${[...widths].join(", ")}`);
 });
 
-test("полоса из любых символов укладывается в отведённые колонки", async () => {
-  const { default: stringWidth } = await import("string-width");
-  const segments = 64;
-
-  // Крайние случаи: всё погашено, всё горит, и смесь с меткой пика.
-  const rows = [
-    METER_GLYPHS.dim.repeat(segments),
-    METER_GLYPHS.lit.repeat(segments),
-    METER_GLYPHS.lit.repeat(30) + METER_GLYPHS.peak + METER_GLYPHS.dim.repeat(segments - 31),
-  ];
-
-  for (const row of rows) {
-    assert.equal(stringWidth(row), segments, "ширина полосы обязана совпадать с числом делений");
+/** Погашенная часть — пустая: делений запаса на экране больше нет. */
+test("незалитая часть полосы пустая", () => {
+  const runs = meterRuns(-20, -20, 64);
+  const tail = runs.filter((run) => run.zone === null);
+  assert.ok(tail.length > 0, "хвоста нет вовсе");
+  for (const run of tail) {
+    assert.match(run.text, /^ +$/, `в хвосте не пробелы: «${run.text}»`);
   }
+});
+
+/** Зоны идут по возрастанию и не перемешиваются. */
+test("залитая часть разложена по зонам в порядке шкалы", () => {
+  const order = ["safe", "warn", "over"];
+  const zones = meterRuns(METER_MAX_DB, METER_MAX_DB, 64)
+    .filter((run) => run.zone !== null)
+    .map((run) => run.zone!);
+  const positions = zones.map((zone) => order.indexOf(zone));
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), `зоны вперемешку: ${zones.join(", ")}`);
+});
+
+/** Кусков должно быть немного — ради этого разбиение и делалось. */
+test("полоса собирается из считаных кусков, а не из сотни", () => {
+  for (let db = METER_FLOOR_DB; db <= METER_MAX_DB; db += 0.5) {
+    const count = meterRuns(db, db + 6, 160).length;
+    assert.ok(count <= 6, `${db} dB: кусков ${count}`);
+  }
+});
+
+/** В тишине полоса пустая, но место занимает прежнее. */
+test("в тишине полоса пустая", () => {
+  const runs = meterRuns(METER_FLOOR_DB, METER_FLOOR_DB, 64);
+  assert.equal(runs.map((run) => run.text).join("").length, 64);
+  assert.equal(
+    runs.some((run) => run.text.includes(METER_GLYPHS.lit)),
+    false,
+  );
 });

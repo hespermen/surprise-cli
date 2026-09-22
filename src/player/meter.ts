@@ -58,7 +58,7 @@ export const METER_GLYPH_RANGE = { first: 0x2500, last: 0x259f } as const;
 /**
  * Символы полосы. Все — из METER_GLYPH_RANGE, и это проверяет тест.
  *
- * Правило выстрадано дважды. Сначала погашенным делением был «▪» (Geometric
+ * Правило выстрадано дважды. Погашенным делением был сначала «▪» (Geometric
  * Shapes), потом «·» (Latin-1) — и оба раза терминал рисовал их ВДВОЕ шире
  * залитого «█». Полоса из 64 делений растягивалась на 128 колонок, а её ширина
  * менялась вместе с музыкой: чем громче, тем больше узких «█» вместо широких
@@ -66,17 +66,28 @@ export const METER_GLYPH_RANGE = { first: 0x2500, last: 0x259f } as const;
  *
  * Проверять ширину библиотекой оказалось мало: и «·», и «█» числятся
  * «неоднозначными» по восточноазиатской таблице, то есть библиотека считает их
- * одинаковыми, а терминал — нет. Надёжен здесь не замер ширины, а происхождение
+ * одинаковыми, а терминал — нет. Надёжно здесь не измерение, а происхождение
  * символа: из той же сетки, что и рамки вокруг.
  */
 export const METER_GLYPHS = {
   /** Горящее деление. */
   lit: "█",
-  /** Погашенное: тонкая дорожка, по которой видно оставшийся запас. */
-  dim: "─",
   /** Метка удержания пика. */
   peak: "┃",
 } as const;
+
+/**
+ * Погашенная часть полосы — пустота.
+ *
+ * Деления запаса убраны намеренно: на широком окне их больше сотни в строке,
+ * они занимают весь экран и спорят за внимание с тем единственным, что здесь
+ * важно, — где сейчас уровень. Пустое место показывает запас ничуть не хуже,
+ * а глаз цепляется за границу залитого, а не за россыпь точек.
+ *
+ * Пробел — ещё и единственный символ, чья ширина не зависит ни от шрифта, ни
+ * от настроек терминала. После двух промахов подряд это не лишнее.
+ */
+export const METER_BLANK = " ";
 
 /**
  * Зона по уровню.
@@ -143,4 +154,67 @@ export function scaleRow(segments: number, marks: readonly number[] = [-30, -20,
   }
 
   return row.join("");
+}
+
+
+/** Первое деление, которому соответствует уровень не ниже db. */
+function segmentAtDb(db: number, segments: number): number {
+  if (segments <= 1) return 0;
+  const ratio = (db - METER_MIN_DB) / (METER_MAX_DB - METER_MIN_DB);
+  return Math.max(0, Math.min(segments, Math.ceil(ratio * (segments - 1))));
+}
+
+/** Кусок полосы одного цвета. */
+export interface MeterRun {
+  text: string;
+  /** Зона задаёт цвет; у пустоты цвета нет. */
+  zone: MeterZone | null;
+}
+
+/**
+ * Полоса, разложенная на однотонные куски.
+ *
+ * Раньше каждое деление было отдельным элементом — больше сотни на строку,
+ * и все они перерисовывались десять раз в секунду. Кусками выходит пять
+ * элементов вместо ста семнадцати при том же изображении.
+ *
+ * Сумма длин кусков ВСЕГДА равна числу делений — это проверяет тест. На этом
+ * держится неподвижность строки: полоса обязана занимать одинаковое место при
+ * любой громкости, иначе всё под ней дёргается в такт музыке.
+ */
+export function meterRuns(db: number, peakDb: number, segments: number): MeterRun[] {
+  if (segments <= 0) return [];
+
+  const lit = litSegments(db, segments);
+  const runs: MeterRun[] = [];
+
+  // Залитая часть раскладывается по зонам: запас, предупреждение, перегрузка.
+  const zones: ReadonlyArray<{ zone: MeterZone; end: number }> = [
+    { zone: "safe", end: segmentAtDb(-6, segments) },
+    { zone: "warn", end: segmentAtDb(-1, segments) },
+    { zone: "over", end: segments },
+  ];
+
+  let cursor = 0;
+  for (const { zone, end } of zones) {
+    const stop = Math.min(lit, end);
+    if (stop > cursor) {
+      runs.push({ text: METER_GLYPHS.lit.repeat(stop - cursor), zone });
+      cursor = stop;
+    }
+  }
+
+  // Метка пика видна только когда она ВЫШЕ залитого: внутри полосы её всё
+  // равно не разглядеть, а смысл метки в том, чтобы показать недавний максимум.
+  const peakAt = Math.max(0, litSegments(peakDb, segments) - 1);
+  if (peakAt >= lit && peakAt < segments) {
+    if (peakAt > lit) runs.push({ text: METER_BLANK.repeat(peakAt - lit), zone: null });
+    runs.push({ text: METER_GLYPHS.peak, zone: zoneOf(segmentDb(peakAt, segments)) });
+    cursor = peakAt + 1;
+  } else {
+    cursor = lit;
+  }
+
+  if (segments > cursor) runs.push({ text: METER_BLANK.repeat(segments - cursor), zone: null });
+  return runs;
 }
