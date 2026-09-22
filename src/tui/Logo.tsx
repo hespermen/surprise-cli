@@ -5,15 +5,16 @@
  * а из тех, что показывают, каждый делает это по-своему (kitty, iTerm2, sixel —
  * три несовместимых протокола). Блоки работают везде одинаково.
  *
- * Цвет бежит по буквам волной. Волна идёт по КОЛОНКАМ, а не по буквам целиком:
- * так переход виден внутри каждой буквы и читается как перелив, а не как
- * мигание отдельных символов.
+ * По буквам проходит светлая полоса. Раньше здесь была радуга — каждая колонка
+ * своим оттенком, — но она стоит на месте: движение в ней только кажущееся, от
+ * смены цвета. Блик именно ДВИЖЕТСЯ, и глаз читает это как перелив.
  */
 
 import { Box, Text } from "ink";
 import React from "react";
 
 import { colorEnabled } from "../ui/term.ts";
+import { beamIntensity, beamPosition, mixHex } from "./shimmer.ts";
 
 /**
  * Блочный шрифт, пять строк высотой.
@@ -37,36 +38,45 @@ const GLYPHS: Record<string, readonly string[]> = {
 const WORDMARK = "SURPRISE.FM";
 export const LOGO_HEIGHT = 5;
 
-/** Знак станции — буква в рамке, как на сайте. */
-const MARK = ["┌───┐", "│▛▀▘│", "│▚▄▖│", "│▙▄▟│", "└───┘"];
-
 /**
- * Оттенок в hex.
+ * Знак станции: залитый квадрат с тёмной буквой внутри.
  *
- * Своя реализация вместо библиотеки: нужен ровно один переход HSL→RGB на
- * насыщенности и яркости, зафиксированных под тёмный терминал. Тянуть ради
- * этого зависимость в пакет, который гордится их отсутствием, не стоит.
+ * Собирается из пиксельной сетки, а не пишется готовыми символами. Причина в
+ * высоте: на логотип отведено пять строк, а букве нужны поля сверху и снизу,
+ * иначе она упирается в край квадрата. Половинные блоки дают десять пиксельных
+ * рядов в тех же пяти строках — этого хватает и на букву, и на поля.
+ *
+ * Единица — залитая часть квадрата, ноль — сама буква (она тёмная, как на
+ * фирменном знаке).
  */
-function hueToHex(hue: number): string {
-  const h = ((hue % 360) + 360) % 360;
-  const saturation = 0.72;
-  const lightness = 0.62;
+const MARK_PIXELS = [
+  "11111111",
+  "10000001",
+  "10000001",
+  "10111111",
+  "10000001",
+  "10000001",
+  "11111101",
+  "10000001",
+  "10000001",
+  "11111111",
+] as const;
 
-  const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = lightness - c / 2;
+/** Пара пиксельных рядов в одну строку символов. */
+function packRows(top: string, bottom: string): string {
+  let out = "";
+  for (let column = 0; column < top.length; column += 1) {
+    const upper = top[column] === "1";
+    const lower = bottom[column] === "1";
+    // Полный блок, верхняя половина, нижняя половина, пусто.
+    out += upper && lower ? "█" : upper ? "▀" : lower ? "▄" : " ";
+  }
+  return out;
+}
 
-  const [r, g, b] =
-    h < 60 ? [c, x, 0]
-    : h < 120 ? [x, c, 0]
-    : h < 180 ? [0, c, x]
-    : h < 240 ? [0, x, c]
-    : h < 300 ? [x, 0, c]
-    : [c, 0, x];
-
-  const channel = (value: number) =>
-    Math.round((value + m) * 255).toString(16).padStart(2, "0");
-  return `#${channel(r)}${channel(g)}${channel(b)}`;
+const MARK: string[] = [];
+for (let row = 0; row < MARK_PIXELS.length; row += 2) {
+  MARK.push(packRows(MARK_PIXELS[row]!, MARK_PIXELS[row + 1]!));
 }
 
 /** Сборка строк логотипа: знак, пробел, слово. */
@@ -84,13 +94,18 @@ function buildRows(): string[] {
 const ROWS = buildRows();
 const LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
 
+/** Базовый цвет букв и цвет в центре блика. */
+const BASE = "#6f7480";
+const GLOW = "#ffffff";
+/** Ширина полосы в колонках, в каждую сторону от центра. */
+const BEAM_HALF = 9;
+
 export function Logo({ frame, width }: { frame: number; width: number }): React.ReactElement | null {
   // Не влезает — не показываем: обрезанный логотип выглядит как сломанный
-  // интерфейс, а места он занимает пять строк из тридцати.
+  // интерфейс.
   if (width < LOGO_WIDTH + 2) return null;
 
   if (!colorEnabled()) {
-    // Без цвета перелив бессмыслен, но сам логотип уместен.
     return (
       <Box flexDirection="column" paddingX={1}>
         {ROWS.map((row, index) => (
@@ -102,21 +117,26 @@ export function Logo({ frame, width }: { frame: number; width: number }): React.
     );
   }
 
+  const beam = beamPosition(frame, LOGO_WIDTH, BEAM_HALF);
+
   return (
     <Box flexDirection="column" paddingX={1}>
       {ROWS.map((row, rowIndex) => (
         <Box key={rowIndex}>
-          {[...row].map((char, columnIndex) => (
-            <Text
-              key={columnIndex}
-              bold
-              // Волна идёт по колонкам и чуть смещается по строкам — иначе
-              // перелив выглядел бы плоской вертикальной полосой.
-              color={char === " " ? undefined : hueToHex(frame * 6 + columnIndex * 7 + rowIndex * 4)}
-            >
-              {char}
-            </Text>
-          ))}
+          {[...row].map((char, columnIndex) => {
+            if (char === " ") return <Text key={columnIndex}> </Text>;
+
+            // Строки чуть сдвинуты друг относительно друга: полоса идёт под
+            // наклоном, а не строго вертикально — ровная выглядит как шов.
+            const intensity =
+              beam === null ? 0 : beamIntensity(columnIndex + rowIndex * 2, beam, BEAM_HALF);
+
+            return (
+              <Text key={columnIndex} bold color={mixHex(BASE, GLOW, intensity)}>
+                {char}
+              </Text>
+            );
+          })}
         </Box>
       ))}
     </Box>

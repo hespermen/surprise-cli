@@ -8,7 +8,7 @@
 
 import { getValidSession } from "../net/auth.ts";
 import { NoAudioBackendError, pickBackend } from "../player/detect.ts";
-import { isInteractive, red, yellow } from "../ui/term.ts";
+import { isInteractive, red, requestTerminalSize, yellow } from "../ui/term.ts";
 
 export async function tuiCommand(): Promise<number> {
   if (!isInteractive()) {
@@ -18,6 +18,10 @@ export async function tuiCommand(): Promise<number> {
     );
     return 1;
   }
+
+  // Просим окно подрасти ДО первой отрисовки: иначе ink снимет старый размер и
+  // сверстает интерфейс под него, а логотип окажется скрыт до первого изменения.
+  requestTerminalSize();
 
   let choice;
   try {

@@ -171,3 +171,31 @@ export async function promptHidden(question: string): Promise<string> {
     stdin.on("data", onData);
   });
 }
+
+/** Сколько нужно, чтобы интерфейс с логотипом поместился целиком. */
+export const MIN_ROWS = 34;
+export const MIN_COLS = 96;
+
+/**
+ * Попросить терминал стать больше, если он мал.
+ *
+ * Последовательность CSI 8 ; строки ; колонки t — стандартная и понятна xterm,
+ * iTerm2, kitty, Alacritty, WezTerm и большинству прочих. Кто её не знает,
+ * молча проигнорирует: это escape-код, а не команда, и сломать им ничего нельзя.
+ *
+ * Просим ТОЛЬКО когда окно меньше нужного, и только один раз при запуске.
+ * Раздвигать и без того большое окно — навязчивость: человек сам выбрал размер.
+ *
+ * Отключается SURPRISE_NO_RESIZE=1 — менять чужое окно без права вето нельзя,
+ * в тайловом оконном менеджере это ещё и бессмысленно.
+ */
+export function requestTerminalSize(rows = MIN_ROWS, columns = MIN_COLS): void {
+  if (!process.stdout.isTTY) return;
+  if (process.env.SURPRISE_NO_RESIZE === "1") return;
+
+  const currentRows = process.stdout.rows ?? 0;
+  const currentColumns = process.stdout.columns ?? 0;
+  if (currentRows >= rows && currentColumns >= columns) return;
+
+  process.stdout.write(`\u001B[8;${Math.max(rows, currentRows)};${Math.max(columns, currentColumns)}t`);
+}

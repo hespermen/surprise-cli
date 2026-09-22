@@ -5430,7 +5430,15 @@ async function promptHidden(question) {
     stdin.on("data", onData);
   });
 }
-var import_qrcode, colorEnabled, wrap, bold, dim, red, green, yellow, cyan;
+function requestTerminalSize(rows = MIN_ROWS, columns = MIN_COLS) {
+  if (!process.stdout.isTTY) return;
+  if (process.env.SURPRISE_NO_RESIZE === "1") return;
+  const currentRows = process.stdout.rows ?? 0;
+  const currentColumns = process.stdout.columns ?? 0;
+  if (currentRows >= rows && currentColumns >= columns) return;
+  process.stdout.write(`\x1B[8;${Math.max(rows, currentRows)};${Math.max(columns, currentColumns)}t`);
+}
+var import_qrcode, colorEnabled, wrap, bold, dim, red, green, yellow, cyan, MIN_ROWS, MIN_COLS;
 var init_term = __esm({
   "src/ui/term.ts"() {
     "use strict";
@@ -5443,6 +5451,8 @@ var init_term = __esm({
     green = wrap("32", "39");
     yellow = wrap("33", "39");
     cyan = wrap("36", "39");
+    MIN_ROWS = 34;
+    MIN_COLS = 96;
   }
 });
 
@@ -23125,17 +23135,50 @@ var init_Visualizer = __esm({
   }
 });
 
+// src/tui/shimmer.ts
+function beamIntensity(column, beam, halfWidth) {
+  if (halfWidth <= 0) return 0;
+  const distance = Math.abs(column - beam);
+  if (distance >= halfWidth) return 0;
+  return (Math.cos(distance / halfWidth * Math.PI) + 1) / 2;
+}
+function beamPosition(frame, width2, halfWidth, pauseFrames = 14) {
+  const travel = width2 + halfWidth * 2;
+  const cycle = travel + pauseFrames;
+  const step = frame % cycle;
+  if (step >= travel) return null;
+  return step - halfWidth;
+}
+function mixHex(from, to, ratio) {
+  const clamp = Math.min(1, Math.max(0, ratio));
+  const parse = (hex) => {
+    const value = hex.replace("#", "");
+    return [
+      Number.parseInt(value.slice(0, 2), 16),
+      Number.parseInt(value.slice(2, 4), 16),
+      Number.parseInt(value.slice(4, 6), 16)
+    ];
+  };
+  const [r1, g1, b1] = parse(from);
+  const [r2, g2, b2] = parse(to);
+  const channel = (a, b) => Math.round(a + (b - a) * clamp).toString(16).padStart(2, "0");
+  return `#${channel(r1, r2)}${channel(g1, g2)}${channel(b1, b2)}`;
+}
+var init_shimmer = __esm({
+  "src/tui/shimmer.ts"() {
+    "use strict";
+  }
+});
+
 // src/tui/Logo.tsx
-function hueToHex(hue) {
-  const h = (hue % 360 + 360) % 360;
-  const saturation = 0.72;
-  const lightness = 0.62;
-  const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
-  const x = c * (1 - Math.abs(h / 60 % 2 - 1));
-  const m = lightness - c / 2;
-  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
-  const channel = (value) => Math.round((value + m) * 255).toString(16).padStart(2, "0");
-  return `#${channel(r)}${channel(g)}${channel(b)}`;
+function packRows(top, bottom) {
+  let out = "";
+  for (let column = 0; column < top.length; column += 1) {
+    const upper = top[column] === "1";
+    const lower = bottom[column] === "1";
+    out += upper && lower ? "\u2588" : upper ? "\u2580" : lower ? "\u2584" : " ";
+  }
+  return out;
 }
 function buildRows() {
   const rows = [];
@@ -23150,23 +23193,21 @@ function Logo({ frame, width: width2 }) {
   if (!colorEnabled()) {
     return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, children: row }, index)) });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { children: [...row].map((char, columnIndex) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-    Text,
-    {
-      bold: true,
-      color: char === " " ? void 0 : hueToHex(frame * 6 + columnIndex * 7 + rowIndex * 4),
-      children: char
-    },
-    columnIndex
-  )) }, rowIndex)) });
+  const beam = beamPosition(frame, LOGO_WIDTH, BEAM_HALF);
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { flexDirection: "column", paddingX: 1, children: ROWS.map((row, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Box_default, { children: [...row].map((char, columnIndex) => {
+    if (char === " ") return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { children: " " }, columnIndex);
+    const intensity = beam === null ? 0 : beamIntensity(columnIndex + rowIndex * 2, beam, BEAM_HALF);
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Text, { bold: true, color: mixHex(BASE, GLOW, intensity), children: char }, columnIndex);
+  }) }, rowIndex)) });
 }
-var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK, ROWS, LOGO_WIDTH;
+var import_react29, import_jsx_runtime8, GLYPHS, WORDMARK, LOGO_HEIGHT, MARK_PIXELS, MARK, ROWS, LOGO_WIDTH, BASE, GLOW, BEAM_HALF;
 var init_Logo = __esm({
   async "src/tui/Logo.tsx"() {
     "use strict";
     await init_build2();
     import_react29 = __toESM(require_react(), 1);
     init_term();
+    init_shimmer();
     import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
     GLYPHS = {
       S: ["\u2588\u2588\u2588", "\u2588  ", "\u2588\u2588\u2588", "  \u2588", "\u2588\u2588\u2588"],
@@ -23182,9 +23223,27 @@ var init_Logo = __esm({
     };
     WORDMARK = "SURPRISE.FM";
     LOGO_HEIGHT = 5;
-    MARK = ["\u250C\u2500\u2500\u2500\u2510", "\u2502\u259B\u2580\u2598\u2502", "\u2502\u259A\u2584\u2596\u2502", "\u2502\u2599\u2584\u259F\u2502", "\u2514\u2500\u2500\u2500\u2518"];
+    MARK_PIXELS = [
+      "11111111",
+      "10000001",
+      "10000001",
+      "10111111",
+      "10000001",
+      "10000001",
+      "11111101",
+      "10000001",
+      "10000001",
+      "11111111"
+    ];
+    MARK = [];
+    for (let row = 0; row < MARK_PIXELS.length; row += 2) {
+      MARK.push(packRows(MARK_PIXELS[row], MARK_PIXELS[row + 1]));
+    }
     ROWS = buildRows();
     LOGO_WIDTH = Math.max(...ROWS.map((row) => [...row].length));
+    BASE = "#6f7480";
+    GLOW = "#ffffff";
+    BEAM_HALF = 9;
   }
 });
 
@@ -26039,6 +26098,7 @@ async function tuiCommand() {
     );
     return 1;
   }
+  requestTerminalSize();
   let choice;
   try {
     choice = await pickBackend();
