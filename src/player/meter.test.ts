@@ -5,6 +5,7 @@ import {
   METER_CHANNEL_ROWS,
   METER_FLOOR_DB,
   METER_GLYPHS,
+  METER_GLYPH_RANGE,
   METER_MAX_DB,
   METER_MIN_DB,
   METER_ROWS,
@@ -116,22 +117,55 @@ test("пустые данные рисуются на полу шкалы, а н
   assert.ok(METER_FLOOR_DB < METER_MIN_DB, "пол ниже нижнего края шкалы");
 });
 
-test("каждый символ полосы занимает ровно одну колонку", async () => {
-  // Регрессия, из-за которой интерфейс дрожал в такт музыке.
-  //
-  // Погашенное деление было «▪» — по Unicode это символ ДВОЙНОЙ ширины. Шесть
-  // десятков делений занимали вдвое больше колонок, строка измерителя
-  // переносилась на вторую, и раскладка под ней съезжала. А поскольку горящие
-  // деления узкие, ширина строки менялась вместе с громкостью: чем громче, тем
-  // она короче. Экран дрожал в такт звуку.
-  //
-  // Считаем той же библиотекой, что и ink, — иначе проверка мерила бы не то.
+/**
+ * Главная проверка файла.
+ *
+ * Символы полосы обязаны происходить из той же сетки, что и рамки интерфейса:
+ * Box Drawing и Block Elements терминал рисует сам, ровно одной клеткой. Всё
+ * остальное он отдаёт шрифту, и ширина перестаёт быть предсказуемой.
+ *
+ * Одного замера ширины мало, и это проверено на практике: «·» по таблице
+ * считается такой же «неоднозначной», как «█», то есть замер их не различает,
+ * а терминал рисовал первый вдвое шире второго. Полоса дрожала в такт музыке,
+ * и найти причину замером было нельзя — только происхождением символа.
+ */
+test("символы полосы — из сетки, которую терминал рисует сам", async () => {
   const { default: stringWidth } = await import("string-width");
 
   for (const [name, glyph] of Object.entries(METER_GLYPHS)) {
-    assert.equal(stringWidth(glyph), 1, `символ «${glyph}» (${name}) занимает не одну колонку`);
-    assert.equal([...glyph].length, 1, `символ «${glyph}» (${name}) должен быть одиночным`);
+    assert.equal([...glyph].length, 1, `${name}: «${glyph}» — не один символ`);
+
+    const code = glyph.codePointAt(0)!;
+    assert.ok(
+      code >= METER_GLYPH_RANGE.first && code <= METER_GLYPH_RANGE.last,
+      `${name}: «${glyph}» (U+${code.toString(16).toUpperCase().padStart(4, "0")}) вне Box Drawing и Block Elements — ` +
+        "его ширину решает шрифт, а не терминал",
+    );
+
+    assert.equal(stringWidth(glyph), 1, `${name}: «${glyph}» занимает не одну колонку`);
   }
+});
+
+/** Полоса обязана быть одной ширины при любой громкости. */
+test("ширина полосы не зависит от уровня", async () => {
+  const { default: stringWidth } = await import("string-width");
+  const segments = 64;
+
+  const widths = new Set<number>();
+  for (let db = METER_FLOOR_DB; db <= METER_MAX_DB; db += 0.5) {
+    const lit = litSegments(db, segments);
+    const peakAt = Math.max(0, litSegments(db, segments) - 1);
+    const row = Array.from({ length: segments }, (_, index) =>
+      index === peakAt && peakAt >= lit
+        ? METER_GLYPHS.peak
+        : index < lit
+          ? METER_GLYPHS.lit
+          : METER_GLYPHS.dim,
+    ).join("");
+    widths.add(stringWidth(row));
+  }
+
+  assert.deepEqual([...widths], [segments], `ширина гуляет: ${[...widths].join(", ")}`);
 });
 
 test("полоса из любых символов укладывается в отведённые колонки", async () => {

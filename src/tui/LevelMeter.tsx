@@ -17,6 +17,7 @@ import {
   METER_CHANNEL_ROWS,
   METER_FLOOR_DB,
   METER_GLYPHS,
+  METER_MAX_SEGMENTS,
   litSegments,
   scaleRow,
   segmentDb,
@@ -87,8 +88,8 @@ export function LevelMeter({
   peaksDb: readonly number[];
   width: number;
 }): React.ReactElement | null {
-  // Два символа на подпись канала плюс поля рамки.
-  const segments = Math.max(0, Math.min(64, width - 8));
+  // Два символа на подпись канала плюс поля рамки и «dB» у шкалы.
+  const segments = Math.max(0, Math.min(METER_MAX_SEGMENTS, width - 8));
   if (segments < 12) return null;
 
   // Ровно METER_CHANNEL_ROWS строк, сколько бы каналов ни пришло: недостающие

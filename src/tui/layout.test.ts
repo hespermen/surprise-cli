@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { MIN_ROWS } from "../ui/term.ts";
 import { MIN_BODY, MIN_USABLE_ROWS, SPARE_ROW, computeLayout } from "./layout.ts";
 
 const LOGO = 5;
@@ -40,11 +41,14 @@ test("кадр всегда оставляет в окне свободную с
   }
 });
 
-test("на рекомендованных 44 строках видно и логотип, и измеритель", () => {
-  const layout = layoutAt(44);
+test("на рекомендованной высоте видно и логотип, и измеритель", () => {
+  // Высота берётся из того же места, что и запрос размера окна при запуске:
+  // разойдись эти числа — и рекомендованный размер перестал бы быть тем, под
+  // который посчитана раскладка.
+  const layout = layoutAt(MIN_ROWS);
   assert.equal(layout.showLogo, true);
   assert.equal(layout.showMeter, true);
-  assert.equal(layout.totalRows, 43);
+  assert.equal(layout.totalRows, MIN_ROWS - SPARE_ROW);
 });
 
 /**
@@ -80,7 +84,7 @@ test("список растёт вместе с окном, когда всё у
     const layout = layoutAt(height);
     return layout.showLogo && layout.showMeter;
   });
-  assert.ok(from && from <= 44, `всё на экране только с ${from} строк`);
+  assert.ok(from && from <= MIN_ROWS, `всё на экране только с ${from} строк`);
 
   let previous = 0;
   for (let height = from!; height <= 120; height += 1) {
@@ -110,18 +114,18 @@ test("ниже порога раскладка признаёт, что не п�
 
 /** Палитра ужимается, а не выдавливает список за край экрана. */
 test("строка команд подстраивает число подсказок под окно", () => {
-  const roomy = layoutAt(44, { commandOpen: true });
+  const roomy = layoutAt(MIN_ROWS, { commandOpen: true });
   assert.equal(roomy.commandSuggestions, 8);
 
   const tight = layoutAt(24, { commandOpen: true });
   assert.ok(tight.commandSuggestions >= 1 && tight.commandSuggestions < 8, `${tight.commandSuggestions}`);
 
-  assert.equal(layoutAt(44, { commandOpen: false }).commandRows, 0);
+  assert.equal(layoutAt(MIN_ROWS, { commandOpen: false }).commandRows, 0);
 });
 
 /** Тесно — отключаем по очереди, а не выдавливаем за экран. */
 test("в низком окне сначала пропадает логотип, потом измеритель", () => {
-  const withBoth = layoutAt(44);
+  const withBoth = layoutAt(MIN_ROWS);
   assert.ok(withBoth.showLogo && withBoth.showMeter);
 
   const tight = layoutAt(22);
@@ -139,5 +143,5 @@ test("без уровней измерителя нет ни при какой �
 
 /** Открытая строка команд забирает много места — логотип ей уступает. */
 test("строка команд прячет логотип", () => {
-  assert.equal(layoutAt(44, { commandOpen: true }).showLogo, false);
+  assert.equal(layoutAt(MIN_ROWS, { commandOpen: true }).showLogo, false);
 });

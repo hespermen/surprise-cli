@@ -5451,8 +5451,8 @@ var init_term = __esm({
     green = wrap("32", "39");
     yellow = wrap("33", "39");
     cyan = wrap("36", "39");
-    MIN_ROWS = 44;
-    MIN_COLS = 104;
+    MIN_ROWS = 45;
+    MIN_COLS = 125;
   }
 });
 
@@ -23324,7 +23324,7 @@ function scaleRow(segments, marks = [-30, -20, -10, -5, 0]) {
   }
   return row.join("");
 }
-var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_FLOOR_DB, METER_GLYPHS;
+var METER_MIN_DB, METER_MAX_DB, METER_CHANNEL_ROWS, METER_ROWS, METER_MAX_SEGMENTS, METER_FLOOR_DB, METER_GLYPHS;
 var init_meter = __esm({
   "src/player/meter.ts"() {
     "use strict";
@@ -23332,12 +23332,13 @@ var init_meter = __esm({
     METER_MAX_DB = 6;
     METER_CHANNEL_ROWS = 2;
     METER_ROWS = METER_CHANNEL_ROWS + 1;
+    METER_MAX_SEGMENTS = 160;
     METER_FLOOR_DB = -120;
     METER_GLYPHS = {
       /** Горящее деление. */
       lit: "\u2588",
-      /** Погашенное: видно, сколько осталось запаса. */
-      dim: "\xB7",
+      /** Погашенное: тонкая дорожка, по которой видно оставшийся запас. */
+      dim: "\u2500",
       /** Метка удержания пика. */
       peak: "\u2503"
     };
@@ -23386,7 +23387,7 @@ function LevelMeter({
   peaksDb,
   width: width2
 }) {
-  const segments = Math.max(0, Math.min(64, width2 - 8));
+  const segments = Math.max(0, Math.min(METER_MAX_SEGMENTS, width2 - 8));
   if (segments < 12) return null;
   const rows = Array.from({ length: METER_CHANNEL_ROWS }, (_, index) => ({
     label: channelLabel(index, Math.max(1, channelsDb.length)),
