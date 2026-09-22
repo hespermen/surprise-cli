@@ -79,6 +79,7 @@ import { LANGS, getLang, sectionLabel, sectionListTitle, setLang, t, type Lang }
 import { THEMES, applyPalette } from "./theme.ts";
 import { loadPrefs, nextInCycle, savePrefs, type Prefs } from "./prefs.ts";
 import { Visualizer } from "./Visualizer.tsx";
+import { LOGO_HEIGHT, Logo } from "./Logo.tsx";
 import { parseLevels } from "../player/levels.ts";
 import { isLiked, toggleLike, type LikeTarget } from "../api/library.ts";
 import { Sidebar } from "./Sidebar.tsx";
@@ -183,6 +184,8 @@ export function App({
   const [prefs, setPrefs] = useState<Prefs>({ theme: THEMES[0]!.id, lang: getLang() });
   /** История громкости для визуализатора, слева направо по времени. */
   const [levels, setLevels] = useState<number[]>([]);
+  /** Кадр перелива логотипа. */
+  const [frame, setFrame] = useState(0);
 
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -243,6 +246,13 @@ export function App({
       cancelled = true;
     };
   }, [activeSection, accessToken, userId, rowsBySection, say]);
+
+  // Перелив логотипа. Пять кадров в секунду: глазу этого хватает на плавность,
+  // а перерисовка экрана чаще стоила бы заметно дороже самой анимации.
+  useEffect(() => {
+    const timer = setInterval(() => setFrame((value) => (value + 1) % 60), 200);
+    return () => clearInterval(timer);
+  }, []);
 
   // Настройки читаются один раз при запуске и сразу применяются к живым палитре
   // и словарю — иначе первый кадр нарисовался бы чужой темой и мигнул.
@@ -1285,7 +1295,10 @@ export function App({
   if (showHelp) return <HelpOverlay width={width} />;
 
   const contentWidth = Math.max(40, width - SIDEBAR_WIDTH);
-  const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6));
+  // Логотип прячем на низком терминале: пять строк из двадцати — это четверть
+  // экрана, и списку остаётся слишком мало.
+  const showLogo = height >= 28 && !commandOpen;
+  const bodyHeight = Math.max(8, height - (commandOpen ? 18 : 6) - (showLogo ? LOGO_HEIGHT : 0));
   const listHeight = Math.max(3, Math.floor(bodyHeight * 0.55) - 3);
 
   const listTitle = drill
@@ -1302,6 +1315,8 @@ export function App({
 
   return (
     <Box flexDirection="column" width={width}>
+      {showLogo ? <Logo frame={frame} width={width} /> : null}
+
       <Box>
         <Sidebar
           sections={SECTIONS.map((candidate, index) => ({
