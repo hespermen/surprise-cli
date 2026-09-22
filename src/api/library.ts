@@ -8,6 +8,7 @@
  */
 
 import { authHeaders, chunk, request, restUrl } from "../net/http.ts";
+import type { StoreTrack } from "./store.ts";
 import { isHiddenFromSite } from "../lib/showVisibility.ts";
 
 export interface PlaylistSummary {
@@ -67,6 +68,12 @@ export interface PlaylistEntry {
   subtitle: string | null;
   durationSec: number | null;
   position: number | null;
+  /**
+   * Для трека — всё, что нужно, чтобы его включить: store-stream хочет id, а
+   * окно превью считается по длительности и ручным настройкам. Без этих полей
+   * трек из плейлиста пришлось бы догружать отдельным запросом на каждую строку.
+   */
+  track?: StoreTrack;
 }
 
 interface PlaylistItemRow {
@@ -85,6 +92,9 @@ interface PlaylistItemRow {
     title: string | null;
     duration: number | null;
     artist_name: string | null;
+    release_id: string | null;
+    preview_start_sec: number | null;
+    preview_duration_sec: number | null;
     releases: { title: string | null } | null;
   } | null;
 }
@@ -100,7 +110,7 @@ export async function listPlaylistItems(accessToken: string, playlistId: string)
     select:
       "position,show_id,store_track_id," +
       "shows_v2(id,title,duration,status,show_artists(artists(name)))," +
-      "store_tracks(id,title,duration,artist_name,releases(title))",
+      "store_tracks(id,title,duration,artist_name,release_id,preview_start_sec,preview_duration_sec,releases(title))",
     playlist_id: `eq.${playlistId}`,
     order: "position.asc.nullslast",
   });
@@ -139,6 +149,17 @@ export async function listPlaylistItems(accessToken: string, playlistId: string)
         subtitle: track.artist_name ?? track.releases?.title ?? null,
         durationSec: track.duration,
         position: row.position,
+        track: {
+          id: track.id,
+          title: track.title,
+          artist_name: track.artist_name,
+          duration: track.duration,
+          position: row.position,
+          release_id: track.release_id,
+          preview_start_sec: track.preview_start_sec,
+          preview_duration_sec: track.preview_duration_sec,
+          releaseTitle: track.releases?.title ?? null,
+        },
       });
     }
   }

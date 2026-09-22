@@ -54,16 +54,38 @@ export function visibleWidth(line: string): number {
  * показать его — хуже, чем не показать. Вызывающий в этом случае оставит ссылку.
  */
 export async function renderQr(text: string): Promise<string | null> {
-  let rendered: string;
-  try {
-    rendered = await QRCode.toString(text, { type: "terminal", small: true, margin: 1 });
-  } catch {
-    return null;
+  // Сначала пробуем КРУПНЫЙ код: каждый модуль — две клетки в ширину и целая в
+  // высоту. Мелкий вариант рисует модуль полклетки, и камера телефона на нём
+  // спотыкается: сглаживание шрифта размывает границы, а запаса на ошибку почти
+  // нет. Разница в площади модуля — вчетверо, и сканируется он совсем иначе.
+  //
+  // Поля (margin) обязаны быть не меньше двух модулей: «тихая зона» — часть
+  // стандарта, без неё декодер не находит границу кода на фоне терминала.
+  for (const options of [
+    { small: false, margin: 2 },
+    { small: true, margin: 2 },
+  ] as const) {
+    let rendered: string;
+    try {
+      rendered = await QRCode.toString(text, {
+        type: "terminal",
+        errorCorrectionLevel: "M",
+        ...options,
+      });
+    } catch {
+      return null;
+    }
+
+    const trimmed = rendered.replace(/\n+$/, "");
+    const widest = trimmed
+      .split("\n")
+      .reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+    if (widest <= terminalWidth()) return trimmed;
   }
-  const widest = rendered
-    .split("\n")
-    .reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
-  return widest > terminalWidth() ? null : rendered.replace(/\n+$/, "");
+
+  // Не влез даже мелкий: обрезанный по краю код не считывается, и показать его
+  // хуже, чем не показать. Вызывающий оставит ссылку — она рабочая сама по себе.
+  return null;
 }
 
 /**

@@ -215,7 +215,7 @@ async function listPlaylists(accessToken, userId) {
 }
 async function listPlaylistItems(accessToken, playlistId) {
   const params = new URLSearchParams({
-    select: "position,show_id,store_track_id,shows_v2(id,title,duration,status,show_artists(artists(name))),store_tracks(id,title,duration,artist_name,releases(title))",
+    select: "position,show_id,store_track_id,shows_v2(id,title,duration,status,show_artists(artists(name))),store_tracks(id,title,duration,artist_name,release_id,preview_start_sec,preview_duration_sec,releases(title))",
     playlist_id: `eq.${playlistId}`,
     order: "position.asc.nullslast"
   });
@@ -246,7 +246,18 @@ async function listPlaylistItems(accessToken, playlistId) {
         title: track.title ?? "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F",
         subtitle: track.artist_name ?? track.releases?.title ?? null,
         durationSec: track.duration,
-        position: row.position
+        position: row.position,
+        track: {
+          id: track.id,
+          title: track.title,
+          artist_name: track.artist_name,
+          duration: track.duration,
+          position: row.position,
+          release_id: track.release_id,
+          preview_start_sec: track.preview_start_sec,
+          preview_duration_sec: track.preview_duration_sec,
+          releaseTitle: track.releases?.title ?? null
+        }
       });
     }
   }
@@ -5304,14 +5315,25 @@ function visibleWidth(line) {
   return [...line.replace(/\u001B\[[0-9;]*m/g, "")].length;
 }
 async function renderQr(text) {
-  let rendered;
-  try {
-    rendered = await import_qrcode.default.toString(text, { type: "terminal", small: true, margin: 1 });
-  } catch {
-    return null;
+  for (const options of [
+    { small: false, margin: 2 },
+    { small: true, margin: 2 }
+  ]) {
+    let rendered;
+    try {
+      rendered = await import_qrcode.default.toString(text, {
+        type: "terminal",
+        errorCorrectionLevel: "M",
+        ...options
+      });
+    } catch {
+      return null;
+    }
+    const trimmed = rendered.replace(/\n+$/, "");
+    const widest = trimmed.split("\n").reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+    if (widest <= terminalWidth()) return trimmed;
   }
-  const widest = rendered.split("\n").reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
-  return widest > terminalWidth() ? null : rendered.replace(/\n+$/, "");
+  return null;
 }
 function openUrl(url) {
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
@@ -23000,8 +23022,12 @@ function App2({
   const playById = (0, import_react30.useCallback)(
     async (showId) => {
       const show = await findShowById(showId, accessToken).catch(() => null);
-      if (show) await playShow(show);
-      else say("\u0412\u044B\u043F\u0443\u0441\u043A \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u043B\u0441\u044F");
+      if (!show) {
+        say("\u0412\u044B\u043F\u0443\u0441\u043A \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u043B\u0441\u044F");
+        return false;
+      }
+      await playShow(show);
+      return true;
     },
     [accessToken, playShow, say]
   );
@@ -23082,10 +23108,9 @@ function App2({
       case "finds": {
         const find = row;
         if (!find.show) return;
-        await playById(find.show.id);
-        if (find.timestampSec !== null && backend.canSeek) {
-          await backend.seek(find.timestampSec, "absolute");
-        }
+        const started = await playById(find.show.id);
+        if (!started || find.timestampSec === null || !backend.canSeek) return;
+        await backend.seek(find.timestampSec, "absolute");
         return;
       }
       case "saved": {
@@ -23142,13 +23167,24 @@ function App2({
         if (!accessToken) return;
         return openDrill(playlist.title, async () => {
           const items = await listPlaylistItems(accessToken, playlist.id);
-          return items.filter((item) => item.kind === "show").map((item) => ({
-            kind: "show",
-            id: item.id,
-            title: item.title,
-            subtitle: item.subtitle,
-            duration: item.durationSec
-          }));
+          return items.flatMap((item) => {
+            if (item.kind === "show") {
+              return [{
+                kind: "show",
+                id: item.id,
+                title: item.title,
+                subtitle: item.subtitle,
+                duration: item.durationSec
+              }];
+            }
+            return item.track ? [{
+              kind: "track",
+              track: item.track,
+              title: item.title,
+              subtitle: item.subtitle,
+              duration: item.durationSec
+            }] : [];
+          });
         });
       }
       default:

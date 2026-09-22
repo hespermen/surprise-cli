@@ -378,10 +378,14 @@ export function App({
    * выпуском.
    */
   const playById = useCallback(
-    async (showId: string) => {
+    async (showId: string): Promise<boolean> => {
       const show = await findShowById(showId, accessToken).catch(() => null);
-      if (show) await playShow(show);
-      else say("Выпуск не открылся");
+      if (!show) {
+        say("Выпуск не открылся");
+        return false;
+      }
+      await playShow(show);
+      return true;
     },
     [accessToken, playShow, say],
   );
@@ -496,11 +500,15 @@ export function App({
       case "finds": {
         const find = row as Find;
         if (!find.show) return;
-        await playById(find.show.id);
-        // Находка — метка внутри выпуска: без прыжка к ней смысл теряется.
-        if (find.timestampSec !== null && backend.canSeek) {
-          await backend.seek(find.timestampSec, "absolute");
-        }
+        const started = await playById(find.show.id);
+        // Перематываем ТОЛЬКО если выпуск действительно включился.
+        //
+        // Раньше перемотка шла безусловно, и когда выпуск не открывался,
+        // абсолютный seek прилетал тому, что играло до этого, — а играл обычно
+        // живой эфир. Перемотка бесконечного потока его рвёт: mpv отваливается
+        // от icecast, и плеер замолкает совсем. Отсюда «находки ломают плеер».
+        if (!started || find.timestampSec === null || !backend.canSeek) return;
+        await backend.seek(find.timestampSec, "absolute");
         return;
       }
 
@@ -557,17 +565,31 @@ export function App({
       case "playlists": {
         const playlist = row as PlaylistSummary;
         if (!accessToken) return;
+        // Треки НЕ выбрасываем: системные плейлисты («Избранные треки», «Мои
+        // находки») состоят из них целиком, и фильтр «только выпуски» оставлял
+        // от такого плейлиста пустой список — он просто не открывался.
         return openDrill(playlist.title, async () => {
           const items = await listPlaylistItems(accessToken, playlist.id);
-          return items
-            .filter((item) => item.kind === "show")
-            .map((item) => ({
-              kind: "show" as const,
-              id: item.id,
-              title: item.title,
-              subtitle: item.subtitle,
-              duration: item.durationSec,
-            }));
+          return items.flatMap<DrillRow>((item) => {
+            if (item.kind === "show") {
+              return [{
+                kind: "show" as const,
+                id: item.id,
+                title: item.title,
+                subtitle: item.subtitle,
+                duration: item.durationSec,
+              }];
+            }
+            return item.track
+              ? [{
+                  kind: "track" as const,
+                  track: item.track,
+                  title: item.title,
+                  subtitle: item.subtitle,
+                  duration: item.durationSec,
+                }]
+              : [];
+          });
         });
       }
 
