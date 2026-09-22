@@ -5451,8 +5451,8 @@ var init_term = __esm({
     green = wrap("32", "39");
     yellow = wrap("33", "39");
     cyan = wrap("36", "39");
-    MIN_ROWS = 40;
-    MIN_COLS = 100;
+    MIN_ROWS = 44;
+    MIN_COLS = 104;
   }
 });
 
