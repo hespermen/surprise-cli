@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatDuration, pad, progressBar, truncate } from "./format.ts";
+import { formatDuration, formatStartTime, pad, progressBar, truncate } from "./format.ts";
 
 test("formatDuration: часы появляются только когда они есть", () => {
   assert.equal(formatDuration(0), "0:00");
@@ -59,4 +59,29 @@ test("progressBar: позиция вне диапазона не ломает ш
   assert.equal([...progressBar(500, 100, 10)].length, 10);
   assert.equal([...progressBar(-10, 100, 10)].length, 10);
   assert.equal(progressBar(null, 100, 10), "─".repeat(10));
+});
+
+test("formatStartTime: сегодняшнее — часы, вчерашнее — с датой", () => {
+  // 22.09.2026 03:00 UTC = 06:00 MSK.
+  const now = Date.UTC(2026, 8, 22, 3, 0, 0);
+  const todayStart = Math.floor(Date.UTC(2026, 8, 22, 2, 15, 0) / 1000); // 05:15 MSK
+  const yesterday = Math.floor(Date.UTC(2026, 8, 21, 18, 40, 0) / 1000); // 21:40 MSK 21-го
+
+  assert.equal(formatStartTime(todayStart, now), "05:15");
+  assert.equal(formatStartTime(yesterday, now), "21.09 21:40");
+});
+
+test("formatStartTime: дата берётся московская, а не UTC", () => {
+  // Ночной эфир 21.09 22:30 UTC — это уже 22.09 01:30 по Москве. Если бы дату
+  // считали по UTC, в расписании стояло бы 21.09, и выпуск уехал бы на сутки
+  // назад относительно того, что видят на сайте.
+  const now = Date.UTC(2026, 8, 23, 12, 0, 0);
+  const lateNight = Math.floor(Date.UTC(2026, 8, 21, 22, 30, 0) / 1000);
+  assert.equal(formatStartTime(lateNight, now), "22.09 01:30");
+});
+
+test("formatStartTime: неизвестное время — прочерк", () => {
+  for (const value of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(formatStartTime(value as number), "—");
+  }
 });

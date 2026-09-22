@@ -48,3 +48,37 @@ export function progressBar(position: number | null, total: number | null, width
   const filled = Math.round(ratio * width);
   return "━".repeat(filled) + "─".repeat(Math.max(0, width - filled));
 }
+
+/**
+ * Время старта выпуска в расписании — всегда по Москве.
+ *
+ * Зона фиксирована намеренно: расписание станции живёт в MSK, и показывать его
+ * в местной зоне слушателя значило бы, что два человека, обсуждающие один эфир,
+ * видят разное время. Это конвенция всего проекта — даты в интерфейсе в
+ * Europe/Moscow.
+ *
+ * Сегодняшнее показываем часами, остальное — с датой: в списке, где сверху
+ * «дальше», а ниже вчерашнее, одни часы сбивали бы с толку.
+ */
+const MSK_PARTS = new Intl.DateTimeFormat("ru-RU", {
+  timeZone: "Europe/Moscow",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+export function formatStartTime(unixSeconds: number | null | undefined, nowMs = Date.now()): string {
+  if (unixSeconds === null || unixSeconds === undefined || !Number.isFinite(unixSeconds)) return "—";
+
+  const parts = (value: Date) =>
+    Object.fromEntries(MSK_PARTS.formatToParts(value).map((part) => [part.type, part.value]));
+
+  const started = parts(new Date(unixSeconds * 1000));
+  const today = parts(new Date(nowMs));
+
+  const time = `${started.hour}:${started.minute}`;
+  const sameDay = started.day === today.day && started.month === today.month;
+  return sameDay ? time : `${started.day}.${started.month} ${time}`;
+}

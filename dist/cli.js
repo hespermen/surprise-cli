@@ -424,9 +424,27 @@ function progressBar(position, total, width2) {
   const filled = Math.round(ratio * width2);
   return "\u2501".repeat(filled) + "\u2500".repeat(Math.max(0, width2 - filled));
 }
+function formatStartTime(unixSeconds, nowMs = Date.now()) {
+  if (unixSeconds === null || unixSeconds === void 0 || !Number.isFinite(unixSeconds)) return "\u2014";
+  const parts = (value) => Object.fromEntries(MSK_PARTS.formatToParts(value).map((part) => [part.type, part.value]));
+  const started = parts(new Date(unixSeconds * 1e3));
+  const today = parts(new Date(nowMs));
+  const time = `${started.hour}:${started.minute}`;
+  const sameDay = started.day === today.day && started.month === today.month;
+  return sameDay ? time : `${started.day}.${started.month} ${time}`;
+}
+var MSK_PARTS;
 var init_format = __esm({
   "src/lib/format.ts"() {
     "use strict";
+    MSK_PARTS = new Intl.DateTimeFormat("ru-RU", {
+      timeZone: "Europe/Moscow",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
   }
 });
 
@@ -22385,11 +22403,12 @@ var init_sections = __esm({
         listTitle: "\u042D\u0444\u0438\u0440 \u2014 \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435",
         emptyHint: "\u0420\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E",
         columns: [
-          // Расписание информационное: по нему не запускают, поэтому колонка «когда»
-          // важнее любой кнопки — она отвечает на единственный вопрос к этому списку.
+          // Расписание информационное: по нему не запускают, поэтому колонки должны
+          // отвечать на единственный вопрос к такому списку — КОГДА. Длительность
+          // отсюда убрана: она про сам выпуск, её место в панели подробностей.
           { header: "\u041A\u043E\u0433\u0434\u0430", width: 7, value: (item) => item.when ?? "" },
           { header: "\u0412\u044B\u043F\u0443\u0441\u043A", width: 0, flex: true, value: (item) => formatRadioItem(item) },
-          { header: "\u0414\u043B\u0438\u0442.", width: 8, value: (item) => formatDuration(item.duration) }
+          { header: "\u041D\u0430\u0447\u0430\u043B\u043E", width: 12, value: (item) => formatStartTime(item.played_at) }
         ],
         // Эфир грузится в App отдельно: он обновляется по таймеру и нужен ещё и
         // панели плеера, поэтому живёт не здесь.
