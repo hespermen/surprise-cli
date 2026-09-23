@@ -914,7 +914,12 @@ export function App({
       code: pending.code || null,
       secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1000)),
     });
-    openUrl(pending.url);
+    // Отказ открывать — сигнал, а не мелочь: ссылку прислал сервер. Ведёт не
+    // на surprise.fm и не в Telegram — значит подменён либо бэкенд, либо его
+    // адрес. Ссылка и QR на экране остаются, решение за человеком.
+    if (!openUrl(pending.url)) {
+      say("Ссылка ведёт не на surprise.fm — сами её не открываем, проверьте адрес");
+    }
 
     const abort = new AbortController();
     loginAbort.current = abort;

@@ -7,7 +7,70 @@
  * причине, что и extension/src/config.ts — чтобы у CLI не появлялся отдельный шаг
  * сборки с переменными окружения.
  */
-export const SUPABASE_URL = process.env.SURPRISE_API_URL ?? "https://api.surprise.fm";
+export const DEFAULT_API_URL = "https://api.surprise.fm";
+
+/**
+ * Хосты, которым можно говорить по незашифрованному http.
+ *
+ * Только петля. Отладка против локального Supabase — законная нужда, и гонять
+ * её через самоподписанный сертификат было бы издевательством; трафик при этом
+ * не покидает машину, перехватывать его негде.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * Проверка адреса бэкенда.
+ *
+ * На этот адрес уходит всё, что вообще стоит красть: заголовок с токеном
+ * доступа, refresh_token в теле обновления сессии, почта с паролем при входе.
+ * Раньше переменная принималась как есть — а значит, строчки `export
+ * SURPRISE_API_URL=http://…` в чужой инструкции, в общем CI или в дописанном
+ * `.bashrc` хватало, чтобы всё это ушло на сторону, да ещё и открытым текстом.
+ *
+ * Функция ЧИСТАЯ и возвращает ошибку значением, а не бросает: разбор адреса
+ * происходит при загрузке модуля, а исключение оттуда печатается стеком
+ * вместо внятной фразы.
+ */
+export function checkApiUrl(raw: string): { url: string } | { error: string } {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return { error: "SURPRISE_API_URL пуст" };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: `SURPRISE_API_URL не похож на адрес: ${trimmed}` };
+  }
+
+  if (parsed.protocol === "https:") return { url: trimmed };
+
+  if (parsed.protocol === "http:") {
+    if (LOOPBACK_HOSTS.has(parsed.hostname)) return { url: trimmed };
+    return {
+      error:
+        `SURPRISE_API_URL=${trimmed} — незашифрованный http на внешний хост. ` +
+        "Туда ушли бы токен доступа и пароль открытым текстом. Нужен https (http допустим только для localhost).",
+    };
+  }
+
+  return { error: `SURPRISE_API_URL: схема ${parsed.protocol} не поддерживается, нужен https` };
+}
+
+const apiUrlOverride = process.env.SURPRISE_API_URL
+  ? checkApiUrl(process.env.SURPRISE_API_URL)
+  : null;
+
+/**
+ * Что не так с адресом — или null, если всё в порядке.
+ *
+ * Молча откатиться на адрес по умолчанию было бы хуже ошибки: человек думает,
+ * что говорит со своим сервером, а плеер ходит на боевой. Поэтому запуск
+ * прерывается — проверку делает index.ts перед первой командой.
+ */
+export const API_URL_ERROR = apiUrlOverride && "error" in apiUrlOverride ? apiUrlOverride.error : null;
+
+export const SUPABASE_URL =
+  apiUrlOverride && "url" in apiUrlOverride ? apiUrlOverride.url : DEFAULT_API_URL;
 
 export const ANON_KEY =
   process.env.SURPRISE_ANON_KEY ??

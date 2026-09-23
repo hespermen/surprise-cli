@@ -95,15 +95,61 @@ export async function renderQr(text: string): Promise<string | null> {
  * сервере без DISPLAY xdg-open печатает ошибку поверх нашего вывода и портит
  * экран ровно в тот момент, когда человек читает инструкцию.
  */
-export function openUrl(url: string): void {
+/**
+ * Кому разрешено открываться в системе.
+ *
+ * Список закрытый, и это принципиально: `xdg-open` и `open` — не «показать
+ * страницу», а «отдать строку тому, кто на неё подписан». Подписаны бывают
+ * `vscode://`, `ms-msdt:`, `search-ms:`, `smb://` — через них запускают
+ * обработчики и уводят NTLM-хеш; `file://` открывает локальный файл, а голый
+ * путь к `.app` на macOS просто запускает приложение.
+ *
+ * Адрес сюда приходит ИЗ ОТВЕТА СЕРВЕРА (auth.ts), и до этой проверки от него
+ * требовалась только непустота. Подменённый бэкенд (или подставленный
+ * SURPRISE_API_URL) получал таким образом запуск произвольного обработчика на
+ * машине человека — а на экране всё это время была ссылка приличного вида.
+ */
+const OPENABLE_HOSTS = new Set([
+  "surprise.fm",
+  "www.surprise.fm",
+  "t.me",
+  "telegram.me",
+  "oauth.telegram.org",
+]);
+
+/** Можно ли отдать этот адрес системному обработчику. */
+export function isOpenableUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  // Только https: у http нет причин появляться во флоу входа, а «-флаг» и
+  // прочие строки без схемы сюда просто не доходят — URL их не разберёт.
+  return parsed.protocol === "https:" && OPENABLE_HOSTS.has(parsed.hostname);
+}
+
+/**
+ * Открыть ссылку в системе — если ей можно доверять.
+ *
+ * Возвращает false, когда открывать отказались: вызывающий обязан показать
+ * ссылку текстом, чтобы человек решил сам. Молчаливый отказ выглядел бы как
+ * поломка, а для этого флоу «ничего не произошло» — худший из исходов.
+ */
+export function openUrl(url: string): boolean {
+  if (!isOpenableUrl(url)) return false;
+
   const command =
     process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
   try {
     const child = spawn(command, [url], { stdio: "ignore", detached: true });
     child.on("error", () => {});
     child.unref();
+    return true;
   } catch {
     // Нет такой команды — человек откроет ссылку сам, она напечатана выше.
+    return false;
   }
 }
 

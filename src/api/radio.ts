@@ -80,7 +80,10 @@ export async function resolveLiveStream(settings: StationSettings | null): Promi
   if (!needsPlaylistResolve(chosen)) return chosen;
 
   try {
-    const body = (await request(chosen, { headers: {}, retries: 1 })) as unknown;
+    // Здесь редирект штатный: раздачи аудио и плейлисты постоянно перебрасывают
+    // на ближайший узел. Тела в этом запросе нет, заголовков тоже (см. ниже),
+    // так что уводить с собой нечего — в отличие от запросов к нашему API.
+    const body = (await request(chosen, { headers: {}, retries: 1, followRedirects: true })) as unknown;
     const entry = typeof body === "string" ? firstEntryFromPlaylist(body) : null;
     return entry ? forceHttps(entry) : chosen;
   } catch {

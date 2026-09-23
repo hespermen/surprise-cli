@@ -41,11 +41,33 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/config.ts
-var SUPABASE_URL, ANON_KEY, FALLBACK_STREAM, NOWPLAYING_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, CLIENT_NAME, CLIENT_VERSION, PLATFORM_HINT;
+function checkApiUrl(raw) {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return { error: "SURPRISE_API_URL \u043F\u0443\u0441\u0442" };
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { error: `SURPRISE_API_URL \u043D\u0435 \u043F\u043E\u0445\u043E\u0436 \u043D\u0430 \u0430\u0434\u0440\u0435\u0441: ${trimmed}` };
+  }
+  if (parsed.protocol === "https:") return { url: trimmed };
+  if (parsed.protocol === "http:") {
+    if (LOOPBACK_HOSTS.has(parsed.hostname)) return { url: trimmed };
+    return {
+      error: `SURPRISE_API_URL=${trimmed} \u2014 \u043D\u0435\u0437\u0430\u0448\u0438\u0444\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0439 http \u043D\u0430 \u0432\u043D\u0435\u0448\u043D\u0438\u0439 \u0445\u043E\u0441\u0442. \u0422\u0443\u0434\u0430 \u0443\u0448\u043B\u0438 \u0431\u044B \u0442\u043E\u043A\u0435\u043D \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u0438 \u043F\u0430\u0440\u043E\u043B\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u043C \u0442\u0435\u043A\u0441\u0442\u043E\u043C. \u041D\u0443\u0436\u0435\u043D https (http \u0434\u043E\u043F\u0443\u0441\u0442\u0438\u043C \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F localhost).`
+    };
+  }
+  return { error: `SURPRISE_API_URL: \u0441\u0445\u0435\u043C\u0430 ${parsed.protocol} \u043D\u0435 \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044F, \u043D\u0443\u0436\u0435\u043D https` };
+}
+var DEFAULT_API_URL, LOOPBACK_HOSTS, apiUrlOverride, API_URL_ERROR, SUPABASE_URL, ANON_KEY, FALLBACK_STREAM, NOWPLAYING_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, CLIENT_NAME, CLIENT_VERSION, PLATFORM_HINT;
 var init_config = __esm({
   "src/config.ts"() {
     "use strict";
-    SUPABASE_URL = process.env.SURPRISE_API_URL ?? "https://api.surprise.fm";
+    DEFAULT_API_URL = "https://api.surprise.fm";
+    LOOPBACK_HOSTS = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+    apiUrlOverride = process.env.SURPRISE_API_URL ? checkApiUrl(process.env.SURPRISE_API_URL) : null;
+    API_URL_ERROR = apiUrlOverride && "error" in apiUrlOverride ? apiUrlOverride.error : null;
+    SUPABASE_URL = apiUrlOverride && "url" in apiUrlOverride ? apiUrlOverride.url : DEFAULT_API_URL;
     ANON_KEY = process.env.SURPRISE_ANON_KEY ?? "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3NzMxNzc2NjIsICJleHAiOiAxOTMwODU3NjYyfQ.KtNNkx_X33kDoDXBh1hiqDlvF660-0mil45pJlL8UvE";
     FALLBACK_STREAM = "https://radio.surprise.fm/listen/surprise/radio.mp3";
     NOWPLAYING_INTERVAL_MS = 2e4;
@@ -89,7 +111,14 @@ async function readBody(res) {
   }
 }
 async function once(url, options) {
-  const { method = "GET", headers: headers3 = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
+  const {
+    method = "GET",
+    headers: headers3 = {},
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal,
+    followRedirects = false
+  } = options;
   const timeout = AbortSignal.timeout(timeoutMs);
   const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let res;
@@ -98,11 +127,19 @@ async function once(url, options) {
       method,
       headers: headers3,
       body: body === void 0 ? void 0 : JSON.stringify(body),
-      signal: composed
+      signal: composed,
+      redirect: followRedirects ? "follow" : "manual"
     });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new NetworkError("\u0421\u0435\u0442\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u0438\u043B\u0438 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043E\u0442\u0432\u0435\u0442\u0438\u043B", error);
+  }
+  if (!followRedirects && res.status >= 300 && res.status < 400) {
+    throw new ApiError(
+      res.status,
+      null,
+      `\u0421\u0435\u0440\u0432\u0435\u0440 \u043E\u0442\u0432\u0435\u0442\u0438\u043B \u0440\u0435\u0434\u0438\u0440\u0435\u043A\u0442\u043E\u043C (${res.status}) \u043D\u0430 ${new URL(url).host}. \u041D\u0430\u0448 API \u0442\u0430\u043A \u043D\u0435 \u043E\u0442\u0432\u0435\u0447\u0430\u0435\u0442 \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 SURPRISE_API_URL \u0438 \u0441\u0435\u0442\u044C \u043C\u0435\u0436\u0434\u0443 \u0432\u0430\u043C\u0438 \u0438 \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u043C.`
+    );
   }
   const parsed = await readBody(res);
   if (!res.ok) throw new ApiError(res.status, parsed, messageFromBody(parsed, `HTTP ${res.status}`));
@@ -5369,14 +5406,26 @@ async function renderQr(text) {
   }
   return null;
 }
+function isOpenableUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && OPENABLE_HOSTS.has(parsed.hostname);
+}
 function openUrl(url) {
+  if (!isOpenableUrl(url)) return false;
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
   try {
     const child = spawn(command, [url], { stdio: "ignore", detached: true });
     child.on("error", () => {
     });
     child.unref();
+    return true;
   } catch {
+    return false;
   }
 }
 function isInteractive() {
@@ -5438,7 +5487,7 @@ function requestTerminalSize(rows = MIN_ROWS, columns = MIN_COLS) {
   if (currentRows >= rows && currentColumns >= columns) return;
   process.stdout.write(`\x1B[8;${Math.max(rows, currentRows)};${Math.max(columns, currentColumns)}t`);
 }
-var import_qrcode, colorEnabled, wrap, bold, dim, red, green, yellow, cyan, MIN_ROWS, MIN_COLS;
+var import_qrcode, colorEnabled, wrap, bold, dim, red, green, yellow, cyan, OPENABLE_HOSTS, MIN_ROWS, MIN_COLS;
 var init_term = __esm({
   "src/ui/term.ts"() {
     "use strict";
@@ -5451,6 +5500,13 @@ var init_term = __esm({
     green = wrap("32", "39");
     yellow = wrap("33", "39");
     cyan = wrap("36", "39");
+    OPENABLE_HOSTS = /* @__PURE__ */ new Set([
+      "surprise.fm",
+      "www.surprise.fm",
+      "t.me",
+      "telegram.me",
+      "oauth.telegram.org"
+    ]);
     MIN_ROWS = 45;
     MIN_COLS = 125;
   }
@@ -5839,7 +5895,7 @@ async function resolveLiveStream(settings) {
   const chosen = forceHttps(resolveLiveStreamUrl({ active, primaryUrl: primary, backupUrl: backup }));
   if (!needsPlaylistResolve(chosen)) return chosen;
   try {
-    const body = await request(chosen, { headers: {}, retries: 1 });
+    const body = await request(chosen, { headers: {}, retries: 1, followRedirects: true });
     const entry = typeof body === "string" ? firstEntryFromPlaylist(body) : null;
     return entry ? forceHttps(entry) : chosen;
   } catch {
@@ -24212,7 +24268,9 @@ function App2({
       code: pending.code || null,
       secondsLeft: Math.max(0, pending.expiresAt - Math.floor(Date.now() / 1e3))
     });
-    openUrl(pending.url);
+    if (!openUrl(pending.url)) {
+      say("\u0421\u0441\u044B\u043B\u043A\u0430 \u0432\u0435\u0434\u0451\u0442 \u043D\u0435 \u043D\u0430 surprise.fm \u2014 \u0441\u0430\u043C\u0438 \u0435\u0451 \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C, \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0430\u0434\u0440\u0435\u0441");
+    }
     const abort = new AbortController();
     loginAbort.current = abort;
     const result = await waitForTelegramLogin(pending, {
@@ -25265,7 +25323,14 @@ ${bold("\u0412\u0445\u043E\u0434 \u0447\u0435\u0440\u0435\u0437 Telegram")}
   process.stdout.write(`${dim("\u0417\u0430\u0442\u0435\u043C \u043D\u0430\u0436\u043C\u0438\u0442\u0435 Start \u0443 \u0431\u043E\u0442\u0430. \u0416\u0434\u0451\u043C \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F\u2026")}
 
 `);
-  if (autoOpen) openUrl(pending.url);
+  if (autoOpen && !openUrl(pending.url)) {
+    process.stdout.write(
+      `${yellow("!")} \u0421\u0441\u044B\u043B\u043A\u0430 \u0432\u0435\u0434\u0451\u0442 \u043D\u0435 \u043D\u0430 surprise.fm \u0438 \u043D\u0435 \u0432 Telegram \u2014 \u0441\u0430\u043C\u0438 \u0435\u0451 \u043D\u0435 \u043E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C.
+${dim("  \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0430\u0434\u0440\u0435\u0441 \u0432\u044B\u0448\u0435, \u043F\u0440\u0435\u0436\u0434\u0435 \u0447\u0435\u043C \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u0442\u044C.")}
+
+`
+    );
+  }
   const result = await waitForTelegramLogin(pending);
   switch (result.status) {
     case "ok":
@@ -26608,12 +26673,17 @@ async function main(argv) {
     process.stdout.write(USAGE);
     return 0;
   }
-  if (!command || command === "tui") return tuiCommand();
   if (command === "--version" || command === "-v") {
     process.stdout.write(`${CLIENT_NAME} ${CLIENT_VERSION}
 `);
     return 0;
   }
+  if (API_URL_ERROR) {
+    process.stderr.write(`${red("\u041E\u0442\u043A\u0430\u0437\u0430\u043D\u043E:")} ${API_URL_ERROR}
+`);
+    return 1;
+  }
+  if (!command || command === "tui") return tuiCommand();
   switch (command) {
     case "radio":
       return radioCommand(rest);

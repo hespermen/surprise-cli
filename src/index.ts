@@ -14,7 +14,7 @@ import { playCommand } from "./commands/play.ts";
 import { radioCommand } from "./commands/radio.ts";
 import { tuiCommand } from "./commands/tui.ts";
 import { logoutCommand, whoamiCommand } from "./commands/session.ts";
-import { CLIENT_NAME, CLIENT_VERSION } from "./config.ts";
+import { API_URL_ERROR, CLIENT_NAME, CLIENT_VERSION } from "./config.ts";
 import { bold, cyan, dim, red } from "./ui/term.ts";
 
 const USAGE = `${bold("surprise")} — SURPRISE.FM в терминале
@@ -46,7 +46,7 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
-  if (!command || command === "tui") return tuiCommand();
+
   if (command === "--version" || command === "-v") {
     // Имя пакета в ответе обязательно. Старый пакет назывался surprise-fm и
     // ставил ту же команду `surprise`; оба отвечали «0.1.0», и понять, какой
@@ -54,6 +54,22 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${CLIENT_NAME} ${CLIENT_VERSION}\n`);
     return 0;
   }
+
+  // Плохой адрес бэкенда останавливает всё, кроме справки и версии.
+  //
+  // На этот адрес уходят заголовок с токеном, refresh_token и пароль, так что
+  // догадка «наверное, человек имел в виду что-то безопасное» здесь
+  // недопустима. Откатиться на адрес по умолчанию тоже нельзя: человек думал,
+  // что говорит со своим сервером, а получил бы боевой, ничего не заметив.
+  //
+  // Справка и версия работают и при поломке намеренно: именно ими выясняют,
+  // что вообще запустилось, когда что-то пошло не так.
+  if (API_URL_ERROR) {
+    process.stderr.write(`${red("Отказано:")} ${API_URL_ERROR}\n`);
+    return 1;
+  }
+
+  if (!command || command === "tui") return tuiCommand();
 
   switch (command) {
     case "radio":

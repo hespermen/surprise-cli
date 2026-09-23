@@ -64,7 +64,15 @@ async function loginByTelegram(autoOpen: boolean): Promise<number> {
   process.stdout.write(`${dim("Отсканируйте QR или откройте ссылку:")}\n  ${cyan(pending.url)}\n`);
   process.stdout.write(`${dim("Затем нажмите Start у бота. Ждём подтверждения…")}\n\n`);
 
-  if (autoOpen) openUrl(pending.url);
+  // Отказ открывать — это не мелочь, а сигнал: ссылку прислал сервер, и если
+  // она ведёт не на surprise.fm и не в Telegram, то либо бэкенд подменён, либо
+  // подменён адрес бэкенда. Молча не открыть значило бы спрятать это.
+  if (autoOpen && !openUrl(pending.url)) {
+    process.stdout.write(
+      `${yellow("!")} Ссылка ведёт не на surprise.fm и не в Telegram — сами её не открываем.\n` +
+        `${dim("  Проверьте адрес выше, прежде чем переходить.")}\n\n`,
+    );
+  }
 
   const result = await waitForTelegramLogin(pending);
 

@@ -84,6 +84,13 @@ export interface RequestOptions {
   /** Сколько РАЗ повторять при сетевом сбое и 5xx. 0 — не повторять. */
   retries?: number;
   signal?: AbortSignal;
+  /**
+   * Идти ли за редиректом. По умолчанию НЕТ — см. комментарий у `once`.
+   *
+   * Включать только там, где редирект — нормальная часть работы: у раздачи
+   * аудио и плейлистов он штатный, у нашего API его не бывает.
+   */
+  followRedirects?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -94,22 +101,56 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  * входа отвечает 429 с текстом, который надо показать человеку.
  */
 async function once(url: string, options: RequestOptions): Promise<unknown> {
-  const { method = "GET", headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
+  const {
+    method = "GET",
+    headers = {},
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal,
+    followRedirects = false,
+  } = options;
 
   const timeout = AbortSignal.timeout(timeoutMs);
   const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
   let res: Response;
   try {
+    // За редиректами НЕ идём по умолчанию.
+    //
+    // Заголовок Authorization браузерный fetch при переходе на чужой origin
+    // снимает сам, а вот ТЕЛО запроса при 307 и 308 пересылает как есть. У нас
+    // в теле ездят пароль с почтой (auth.ts, вход) и refresh_token (там же,
+    // обновление сессии) — то есть один ответ «308 Location: …» от
+    // скомпрометированного или просто криво настроенного прокси уводил бы
+    // учётные данные на указанный им хост.
+    //
+    // GoTrue на /auth/v1/token не редиректит никогда, PostgREST тоже. Так что
+    // запрет ничего не ломает, а редкие места, где редирект штатный (раздача
+    // аудио, плейлисты), включают его явным followRedirects.
     res = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: composed,
+      redirect: followRedirects ? "follow" : "manual",
     });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new NetworkError("Сеть недоступна или сервер не ответил", error);
+  }
+
+  // Редирект при запрете — отдельная, внятная ошибка.
+  //
+  // Без неё это был бы «HTTP 308» с пустым телом: сообщение, по которому никто
+  // не догадается, что произошло и почему. А произошло нечто, о чём стоит
+  // узнать: наш API не редиректит, значит отвечает не он.
+  if (!followRedirects && res.status >= 300 && res.status < 400) {
+    throw new ApiError(
+      res.status,
+      null,
+      `Сервер ответил редиректом (${res.status}) на ${new URL(url).host}. ` +
+        "Наш API так не отвечает — проверьте SURPRISE_API_URL и сеть между вами и сервером.",
+    );
   }
 
   const parsed = await readBody(res);
