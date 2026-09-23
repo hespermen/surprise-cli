@@ -42,7 +42,11 @@ await build({
   // react-devtools-core — необязательный импорт ink, живой только в dev-режиме.
   // В зависимостях его нет и не надо, но без подмены esbuild отказывается
   // собирать бандл целиком.
-  alias: { "react-devtools-core": "./scripts/devtools-stub.js" },
+  alias: {
+    "react-devtools-core": "./scripts/devtools-stub.js",
+    // ws приезжал ради devtools, которые выше уже заглушены. См. ws-stub.js.
+    ws: "./scripts/ws-stub.js",
+  },
   // Имя и версия — из package.json, чтобы они не могли разойтись с пакетом.
   define: {
     "process.env.NODE_ENV": '"production"',

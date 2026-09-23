@@ -241,7 +241,20 @@ Presence pings and play statistics work **without signing in** too: they belong 
 the platform, not to an account. If that doesn't suit you — the player is open
 source, and all of the above lives in `src/api/plays.ts` and `src/api/radio.ts`.
 
-What the player does NOT do: it goes nowhere except surprise.fm, collects no
+Two things worth knowing about storage and dependencies.
+
+**The token is stored on disk in the clear.** `session.json` is created with
+mode `0600`, the directory `0700`, the write is atomic — but it is a file, not a
+system keychain. Whoever has your uid has your token. That is ordinary for a
+CLI, and still better known in advance than discovered later.
+
+**Dependencies are compiled into one file.** `ink`, `react` and `qrcode` live
+inside `dist/cli.js`. Installing therefore downloads nothing, but `npm audit`
+will show you a package with no dependencies while their code runs. A
+vulnerability in any of them is fixed only by a new release of the player — that
+is on us to watch, not on your scanner.
+
+ it goes nowhere except surprise.fm, collects no
 telemetry about your environment, sends no contents of your files. The access
 token is kept only on your machine, in `~/.config/surprise-fm/session.json` with
 mode `0600`.
