@@ -25419,6 +25419,30 @@ function clampVolume(percent) {
   return Math.min(VOLUME_MAX, Math.max(VOLUME_MIN, Math.round(percent)));
 }
 
+// src/player/playable.ts
+var LOOPBACK = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+var UnplayableUrlError = class extends Error {
+  constructor(url) {
+    super(
+      `\u041E\u0442\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u043C\u0441\u044F \u0438\u0433\u0440\u0430\u0442\u044C ${url}: \u043F\u043B\u0435\u0435\u0440\u0443 \u043E\u0442\u0434\u0430\u0451\u043C \u0442\u043E\u043B\u044C\u043A\u043E https. \u0421\u0445\u0435\u043C\u044B \u0432\u0440\u043E\u0434\u0435 file: \u0438 concat: \u0447\u0438\u0442\u0430\u044E\u0442 \u0444\u0430\u0439\u043B\u044B \u043D\u0430 \u0432\u0430\u0448\u0435\u0439 \u043C\u0430\u0448\u0438\u043D\u0435, \u0438 \u0432 \u043E\u0442\u0432\u0435\u0442\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u0438\u043C \u0434\u0435\u043B\u0430\u0442\u044C \u043D\u0435\u0447\u0435\u0433\u043E.`
+    );
+    this.name = "UnplayableUrlError";
+  }
+};
+function isPlayableUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol === "https:") return true;
+  return parsed.protocol === "http:" && LOOPBACK.has(parsed.hostname);
+}
+function assertPlayable(url) {
+  if (!isPlayableUrl(url)) throw new UnplayableUrlError(url);
+}
+
 // src/player/failure.ts
 function describeFailure(stderrTail, binary) {
   const text = stderrTail.trim();
@@ -25481,6 +25505,7 @@ var FfplayBackend = class extends BackendEmitter {
   async start() {
   }
   async load(url, options = {}) {
+    assertPlayable(url);
     this.#url = url;
     await this.#spawnAt(options.startSec ?? 0);
   }
@@ -25811,6 +25836,7 @@ var MpvBackend = class extends BackendEmitter {
     });
   }
   async load(url, options = {}) {
+    assertPlayable(url);
     await this.start();
     this.#state = { positionSec: null, durationSec: null, paused: false, idle: false };
     const startSec = options.startSec && options.startSec > 0 ? options.startSec : null;

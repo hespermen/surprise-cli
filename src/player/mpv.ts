@@ -24,6 +24,7 @@ import {
   type LoadOptions,
   type PlaybackStatus,
 } from "./backend.ts";
+import { assertPlayable } from "./playable.ts";
 import { PLAYBACK_WATCHDOG_MS, describeFailure } from "./failure.ts";
 
 interface PendingCommand {
@@ -288,6 +289,9 @@ export class MpvBackend extends BackendEmitter implements AudioBackend {
   }
 
   async load(url: string, options: LoadOptions = {}): Promise<void> {
+    // Первой строкой, до запуска процесса: mpv понимает file:// и добрый
+    // десяток протоколов ffmpeg, а адрес приходит из ответа сервера.
+    assertPlayable(url);
     await this.start();
     this.#state = { positionSec: null, durationSec: null, paused: false, idle: false };
 

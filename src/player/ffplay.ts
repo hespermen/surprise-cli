@@ -24,6 +24,7 @@ import {
   type LoadOptions,
   type PlaybackStatus,
 } from "./backend.ts";
+import { assertPlayable } from "./playable.ts";
 import { describeFailure } from "./failure.ts";
 
 /** Короче этого «воспроизведение» — точно не воспроизведение. */
@@ -86,6 +87,7 @@ export class FfplayBackend extends BackendEmitter implements AudioBackend {
   }
 
   async load(url: string, options: LoadOptions = {}): Promise<void> {
+    assertPlayable(url);
     this.#url = url;
     await this.#spawnAt(options.startSec ?? 0);
   }
