@@ -3829,7 +3829,7 @@ var require_bitpacker = __commonJS({
         options.colorType
       ) !== -1;
       if (options.colorType === options.inputColorType) {
-        let bigEndian = function() {
+        let bigEndian = (function() {
           let buffer = new ArrayBuffer(2);
           new DataView(buffer).setInt16(
             0,
@@ -3838,7 +3838,7 @@ var require_bitpacker = __commonJS({
             /* littleEndian */
           );
           return new Int16Array(buffer)[0] !== 256;
-        }();
+        })();
         if (options.bitDepth === 8 || options.bitDepth === 16 && bigEndian) {
           return dataIn;
         }
@@ -6965,7 +6965,7 @@ var init_yoga_wasm_base64_esm = __esm({
   "node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js"() {
     loadYoga = (() => {
       var _scriptDir = import.meta.url;
-      return function(loadYoga2) {
+      return (function(loadYoga2) {
         loadYoga2 = loadYoga2 || {};
         var h;
         h || (h = typeof loadYoga2 !== "undefined" ? loadYoga2 : {});
@@ -8189,7 +8189,7 @@ var init_yoga_wasm_base64_esm = __esm({
         if (h.preInit) for ("function" == typeof h.preInit && (h.preInit = [h.preInit]); 0 < h.preInit.length; ) h.preInit.pop()();
         Mb();
         return loadYoga2.ready;
-      };
+      });
     })();
     yoga_wasm_base64_esm_default = loadYoga;
   }
@@ -8199,7 +8199,7 @@ var init_yoga_wasm_base64_esm = __esm({
 var Align, BoxSizing, Dimension, Direction, Display, Edge, Errata, ExperimentalFeature, FlexDirection, Gutter, Justify, LogLevel, MeasureMode, NodeType, Overflow, PositionType, Unit, Wrap, constants, YGEnums_default;
 var init_YGEnums = __esm({
   "node_modules/yoga-layout/dist/src/generated/YGEnums.js"() {
-    Align = /* @__PURE__ */ function(Align2) {
+    Align = /* @__PURE__ */ (function(Align2) {
       Align2[Align2["Auto"] = 0] = "Auto";
       Align2[Align2["FlexStart"] = 1] = "FlexStart";
       Align2[Align2["Center"] = 2] = "Center";
@@ -8210,30 +8210,30 @@ var init_YGEnums = __esm({
       Align2[Align2["SpaceAround"] = 7] = "SpaceAround";
       Align2[Align2["SpaceEvenly"] = 8] = "SpaceEvenly";
       return Align2;
-    }({});
-    BoxSizing = /* @__PURE__ */ function(BoxSizing2) {
+    })({});
+    BoxSizing = /* @__PURE__ */ (function(BoxSizing2) {
       BoxSizing2[BoxSizing2["BorderBox"] = 0] = "BorderBox";
       BoxSizing2[BoxSizing2["ContentBox"] = 1] = "ContentBox";
       return BoxSizing2;
-    }({});
-    Dimension = /* @__PURE__ */ function(Dimension2) {
+    })({});
+    Dimension = /* @__PURE__ */ (function(Dimension2) {
       Dimension2[Dimension2["Width"] = 0] = "Width";
       Dimension2[Dimension2["Height"] = 1] = "Height";
       return Dimension2;
-    }({});
-    Direction = /* @__PURE__ */ function(Direction2) {
+    })({});
+    Direction = /* @__PURE__ */ (function(Direction2) {
       Direction2[Direction2["Inherit"] = 0] = "Inherit";
       Direction2[Direction2["LTR"] = 1] = "LTR";
       Direction2[Direction2["RTL"] = 2] = "RTL";
       return Direction2;
-    }({});
-    Display = /* @__PURE__ */ function(Display2) {
+    })({});
+    Display = /* @__PURE__ */ (function(Display2) {
       Display2[Display2["Flex"] = 0] = "Flex";
       Display2[Display2["None"] = 1] = "None";
       Display2[Display2["Contents"] = 2] = "Contents";
       return Display2;
-    }({});
-    Edge = /* @__PURE__ */ function(Edge2) {
+    })({});
+    Edge = /* @__PURE__ */ (function(Edge2) {
       Edge2[Edge2["Left"] = 0] = "Left";
       Edge2[Edge2["Top"] = 1] = "Top";
       Edge2[Edge2["Right"] = 2] = "Right";
@@ -8244,8 +8244,8 @@ var init_YGEnums = __esm({
       Edge2[Edge2["Vertical"] = 7] = "Vertical";
       Edge2[Edge2["All"] = 8] = "All";
       return Edge2;
-    }({});
-    Errata = /* @__PURE__ */ function(Errata2) {
+    })({});
+    Errata = /* @__PURE__ */ (function(Errata2) {
       Errata2[Errata2["None"] = 0] = "None";
       Errata2[Errata2["StretchFlexBasis"] = 1] = "StretchFlexBasis";
       Errata2[Errata2["AbsolutePositionWithoutInsetsExcludesPadding"] = 2] = "AbsolutePositionWithoutInsetsExcludesPadding";
@@ -8253,25 +8253,25 @@ var init_YGEnums = __esm({
       Errata2[Errata2["All"] = 2147483647] = "All";
       Errata2[Errata2["Classic"] = 2147483646] = "Classic";
       return Errata2;
-    }({});
-    ExperimentalFeature = /* @__PURE__ */ function(ExperimentalFeature2) {
+    })({});
+    ExperimentalFeature = /* @__PURE__ */ (function(ExperimentalFeature2) {
       ExperimentalFeature2[ExperimentalFeature2["WebFlexBasis"] = 0] = "WebFlexBasis";
       return ExperimentalFeature2;
-    }({});
-    FlexDirection = /* @__PURE__ */ function(FlexDirection2) {
+    })({});
+    FlexDirection = /* @__PURE__ */ (function(FlexDirection2) {
       FlexDirection2[FlexDirection2["Column"] = 0] = "Column";
       FlexDirection2[FlexDirection2["ColumnReverse"] = 1] = "ColumnReverse";
       FlexDirection2[FlexDirection2["Row"] = 2] = "Row";
       FlexDirection2[FlexDirection2["RowReverse"] = 3] = "RowReverse";
       return FlexDirection2;
-    }({});
-    Gutter = /* @__PURE__ */ function(Gutter2) {
+    })({});
+    Gutter = /* @__PURE__ */ (function(Gutter2) {
       Gutter2[Gutter2["Column"] = 0] = "Column";
       Gutter2[Gutter2["Row"] = 1] = "Row";
       Gutter2[Gutter2["All"] = 2] = "All";
       return Gutter2;
-    }({});
-    Justify = /* @__PURE__ */ function(Justify2) {
+    })({});
+    Justify = /* @__PURE__ */ (function(Justify2) {
       Justify2[Justify2["FlexStart"] = 0] = "FlexStart";
       Justify2[Justify2["Center"] = 1] = "Center";
       Justify2[Justify2["FlexEnd"] = 2] = "FlexEnd";
@@ -8279,8 +8279,8 @@ var init_YGEnums = __esm({
       Justify2[Justify2["SpaceAround"] = 4] = "SpaceAround";
       Justify2[Justify2["SpaceEvenly"] = 5] = "SpaceEvenly";
       return Justify2;
-    }({});
-    LogLevel = /* @__PURE__ */ function(LogLevel2) {
+    })({});
+    LogLevel = /* @__PURE__ */ (function(LogLevel2) {
       LogLevel2[LogLevel2["Error"] = 0] = "Error";
       LogLevel2[LogLevel2["Warn"] = 1] = "Warn";
       LogLevel2[LogLevel2["Info"] = 2] = "Info";
@@ -8288,43 +8288,43 @@ var init_YGEnums = __esm({
       LogLevel2[LogLevel2["Verbose"] = 4] = "Verbose";
       LogLevel2[LogLevel2["Fatal"] = 5] = "Fatal";
       return LogLevel2;
-    }({});
-    MeasureMode = /* @__PURE__ */ function(MeasureMode2) {
+    })({});
+    MeasureMode = /* @__PURE__ */ (function(MeasureMode2) {
       MeasureMode2[MeasureMode2["Undefined"] = 0] = "Undefined";
       MeasureMode2[MeasureMode2["Exactly"] = 1] = "Exactly";
       MeasureMode2[MeasureMode2["AtMost"] = 2] = "AtMost";
       return MeasureMode2;
-    }({});
-    NodeType = /* @__PURE__ */ function(NodeType2) {
+    })({});
+    NodeType = /* @__PURE__ */ (function(NodeType2) {
       NodeType2[NodeType2["Default"] = 0] = "Default";
       NodeType2[NodeType2["Text"] = 1] = "Text";
       return NodeType2;
-    }({});
-    Overflow = /* @__PURE__ */ function(Overflow2) {
+    })({});
+    Overflow = /* @__PURE__ */ (function(Overflow2) {
       Overflow2[Overflow2["Visible"] = 0] = "Visible";
       Overflow2[Overflow2["Hidden"] = 1] = "Hidden";
       Overflow2[Overflow2["Scroll"] = 2] = "Scroll";
       return Overflow2;
-    }({});
-    PositionType = /* @__PURE__ */ function(PositionType2) {
+    })({});
+    PositionType = /* @__PURE__ */ (function(PositionType2) {
       PositionType2[PositionType2["Static"] = 0] = "Static";
       PositionType2[PositionType2["Relative"] = 1] = "Relative";
       PositionType2[PositionType2["Absolute"] = 2] = "Absolute";
       return PositionType2;
-    }({});
-    Unit = /* @__PURE__ */ function(Unit2) {
+    })({});
+    Unit = /* @__PURE__ */ (function(Unit2) {
       Unit2[Unit2["Undefined"] = 0] = "Undefined";
       Unit2[Unit2["Point"] = 1] = "Point";
       Unit2[Unit2["Percent"] = 2] = "Percent";
       Unit2[Unit2["Auto"] = 3] = "Auto";
       return Unit2;
-    }({});
-    Wrap = /* @__PURE__ */ function(Wrap2) {
+    })({});
+    Wrap = /* @__PURE__ */ (function(Wrap2) {
       Wrap2[Wrap2["NoWrap"] = 0] = "NoWrap";
       Wrap2[Wrap2["Wrap"] = 1] = "Wrap";
       Wrap2[Wrap2["WrapReverse"] = 2] = "WrapReverse";
       return Wrap2;
-    }({});
+    })({});
     constants = {
       ALIGN_AUTO: Align.Auto,
       ALIGN_FLEX_START: Align.FlexStart,
