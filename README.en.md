@@ -10,6 +10,11 @@ curl -fsSL https://surprise.fm/cli | sh
 
 The player opens by itself. After that, run it with `surprise`.
 
+> **This package is not on npm yet.** The only sources are this repository and
+> `surprise.fm/cli`. If you find a package named `surprise-cli`, `surprise-fm`
+> or anything similar on npm, it is not ours — do not install it. The name
+> `surprise` on npm was taken long ago by an unrelated person.
+
 The installer checks Node, removes an older version if there was one, and tells
 you about mpv. Reading it first is a sound habit — it is served as plain text for
 exactly that reason:
