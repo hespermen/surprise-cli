@@ -7,6 +7,8 @@
  * меняется раз в жизни и одинакова для всего экрана, это честный размен.
  */
 
+import { stripControl } from "../lib/safeText.ts";
+
 export interface Palette {
   accent: string;
   accentDim: string;
@@ -123,8 +125,12 @@ export function bar(position: number | null, total: number | null, width: number
  */
 export function fit(text: string, width: number): string {
   if (width <= 0) return "";
-  const chars = [...text];
-  if (chars.length <= width) return text;
+  // См. комментарий в lib/format.ts: чистим в одном месте, через которое
+  // проходит весь текст сервера, а не у каждого вызывающего.
+  const chars = [...stripControl(text)];
+  // Очищенное, а не исходное — см. тот же разбор в lib/format.ts.
+  const clean = chars.join("");
+  if (chars.length <= width) return clean;
   if (width === 1) return "…";
   return `${chars.slice(0, width - 1).join("")}…`;
 }

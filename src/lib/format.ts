@@ -2,6 +2,8 @@
  * Форматирование для терминала. Чистые функции — всё тестируется без экрана.
  */
 
+import { stripControl } from "./safeText.ts";
+
 /** «1:04:12» или «4:12». Часы появляются только когда они есть. */
 export function formatDuration(totalSeconds: number | null | undefined): string {
   if (totalSeconds === null || totalSeconds === undefined || !Number.isFinite(totalSeconds)) return "--:--";
@@ -24,8 +26,16 @@ export function formatDuration(totalSeconds: number | null | undefined): string 
  */
 export function truncate(text: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";
-  const chars = [...text];
-  if (chars.length <= maxWidth) return text;
+  // Чистим ЗДЕСЬ, а не у каждого вызывающего: через эту функцию проходит
+  // почти всё, что сервер показывает человеку, и забыть один вызов из
+  // полутора десятков — вопрос времени. Цвет накладывается снаружи, так что
+  // свои управляющие последовательности фильтр не заденет.
+  const chars = [...stripControl(text)];
+  // Возвращаем ОЧИЩЕННОЕ, а не исходное: короткая строка иначе проходила бы
+  // фильтр насквозь, и защита работала бы только для длинных названий —
+  // ровно наоборот тому, как её задумывали.
+  const clean = chars.join("");
+  if (chars.length <= maxWidth) return clean;
   if (maxWidth === 1) return "…";
   return `${chars.slice(0, maxWidth - 1).join("")}…`;
 }

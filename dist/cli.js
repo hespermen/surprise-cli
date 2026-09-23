@@ -483,6 +483,18 @@ var init_library = __esm({
   }
 });
 
+// src/lib/safeText.ts
+function stripControl(text) {
+  return text.replace(CONTROL, "");
+}
+var CONTROL;
+var init_safeText = __esm({
+  "src/lib/safeText.ts"() {
+    "use strict";
+    CONTROL = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F]/g;
+  }
+});
+
 // src/lib/format.ts
 function formatDuration(totalSeconds) {
   if (totalSeconds === null || totalSeconds === void 0 || !Number.isFinite(totalSeconds)) return "--:--";
@@ -495,8 +507,9 @@ function formatDuration(totalSeconds) {
 }
 function truncate(text, maxWidth) {
   if (maxWidth <= 0) return "";
-  const chars = [...text];
-  if (chars.length <= maxWidth) return text;
+  const chars = [...stripControl(text)];
+  const clean = chars.join("");
+  if (chars.length <= maxWidth) return clean;
   if (maxWidth === 1) return "\u2026";
   return `${chars.slice(0, maxWidth - 1).join("")}\u2026`;
 }
@@ -528,6 +541,7 @@ var MSK_PARTS;
 var init_format = __esm({
   "src/lib/format.ts"() {
     "use strict";
+    init_safeText();
     MSK_PARTS = new Intl.DateTimeFormat("ru-RU", {
       timeZone: "Europe/Moscow",
       day: "2-digit",
@@ -22097,8 +22111,9 @@ function bar(position, total, width2) {
 }
 function fit(text, width2) {
   if (width2 <= 0) return "";
-  const chars = [...text];
-  if (chars.length <= width2) return text;
+  const chars = [...stripControl(text)];
+  const clean = chars.join("");
+  if (chars.length <= width2) return clean;
   if (width2 === 1) return "\u2026";
   return `${chars.slice(0, width2 - 1).join("")}\u2026`;
 }
@@ -22110,6 +22125,7 @@ var THEMES, DEFAULT_THEME, theme;
 var init_theme = __esm({
   "src/tui/theme.ts"() {
     "use strict";
+    init_safeText();
     THEMES = [
       {
         id: "night",
