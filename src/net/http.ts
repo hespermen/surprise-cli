@@ -54,19 +54,51 @@ export function authHeaders(accessToken: string): Record<string, string> {
  * `error_description` или `msg`, PostgREST — в `message`. Проверяем все, иначе
  * человек увидит голое «HTTP 400».
  */
+/**
+ * Сколько чужого текста готовы показать.
+ *
+ * Не-JSON в ответе — это обычно страница прокси или WAF, а они иногда
+ * возвращают эхом заголовки запроса. Печатать такое целиком значит вывалить
+ * человеку на экран простыню, в которой может оказаться и его собственный
+ * Authorization. Двухсот символов хватает, чтобы понять, кто ответил.
+ */
+const MAX_ERROR_TEXT = 200;
+
+function clip(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length <= MAX_ERROR_TEXT ? trimmed : `${trimmed.slice(0, MAX_ERROR_TEXT)}…`;
+}
+
 function messageFromBody(body: unknown, fallback: string): string {
-  if (typeof body === "string" && body.trim()) return body.trim();
+  if (typeof body === "string" && body.trim()) return clip(body);
   if (body && typeof body === "object") {
     const b = body as Record<string, unknown>;
     for (const key of ["error_description", "error", "message", "msg", "hint"]) {
       const value = b[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "string" && value.trim()) return clip(value);
     }
   }
   return fallback;
 }
 
+/**
+ * Потолок на тело ответа.
+ *
+ * `res.text()` буферизует всё, что пришлёт та сторона, — а та сторона может
+ * оказаться не нашей (подменённый адрес, прокси, просто сломанный сервер).
+ * Четыре мегабайта с запасом перекрывают любой наш ответ: самый большой — это
+ * список выпусков, и он на два порядка меньше.
+ */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 async function readBody(res: Response): Promise<unknown> {
+  const length = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(length) && length > MAX_BODY_BYTES) {
+    throw new NetworkError(
+      `Ответ слишком большой (${Math.round(length / 1024 / 1024)} МБ). Наш API столько не отдаёт.`,
+    );
+  }
+
   const text = await res.text().catch(() => "");
   if (!text) return null;
   try {

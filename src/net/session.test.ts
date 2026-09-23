@@ -113,3 +113,63 @@ test("withSessionLock: брошенный лок перехватывается 
     assert.ok(Date.now() - started < 2_000, "устаревший лок не перехвачен");
   });
 });
+
+/**
+ * Выход не должен удалять то, что ему не принадлежит.
+ *
+ * Путь берётся из SURPRISE_SESSION_PATH, а `rm` по нему делался без разговоров:
+ * связка с ~/.ssh/id_rsa и `surprise logout` уничтожала ключ.
+ */
+test("logout не трогает чужой файл", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "surprise-logout-"));
+  const target = join(dir, "not-a-session");
+  await writeFile(target, "-----BEGIN OPENSSH PRIVATE KEY-----\n", "utf8");
+
+  const previous = process.env.SURPRISE_SESSION_PATH;
+  process.env.SURPRISE_SESSION_PATH = target;
+  try {
+    await assert.rejects(clearSession(), /не файл сессии/);
+    assert.equal(await readFile(target, "utf8"), "-----BEGIN OPENSSH PRIVATE KEY-----\n");
+  } finally {
+    if (previous === undefined) delete process.env.SURPRISE_SESSION_PATH;
+    else process.env.SURPRISE_SESSION_PATH = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** Свой файл по-прежнему удаляется — иначе выход перестал бы работать. */
+test("logout удаляет настоящую сессию", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "surprise-logout-ok-"));
+  const target = join(dir, "session.json");
+
+  const previous = process.env.SURPRISE_SESSION_PATH;
+  process.env.SURPRISE_SESSION_PATH = target;
+  try {
+    await writeSession({
+      access_token: "a",
+      refresh_token: "r",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_id: "u",
+    });
+    await clearSession();
+    await assert.rejects(readFile(target, "utf8"));
+  } finally {
+    if (previous === undefined) delete process.env.SURPRISE_SESSION_PATH;
+    else process.env.SURPRISE_SESSION_PATH = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** Файла нет — это нормальный выход, а не ошибка. */
+test("logout без файла молча завершается", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "surprise-logout-none-"));
+  const previous = process.env.SURPRISE_SESSION_PATH;
+  process.env.SURPRISE_SESSION_PATH = join(dir, "нет-такого.json");
+  try {
+    await assert.doesNotReject(clearSession());
+  } finally {
+    if (previous === undefined) delete process.env.SURPRISE_SESSION_PATH;
+    else process.env.SURPRISE_SESSION_PATH = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});

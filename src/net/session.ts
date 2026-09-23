@@ -84,8 +84,45 @@ export async function writeSession(session: Session): Promise<void> {
   }
 }
 
+/**
+ * Выход: удаляем файл сессии — но только если это ОН.
+ *
+ * Путь берётся из SURPRISE_SESSION_PATH, то есть в принципе указывает куда
+ * угодно. Раньше выход делал `rm` по нему без разговоров, и связка
+ * `SURPRISE_SESSION_PATH=~/.ssh/id_rsa` с `surprise logout` уничтожала ключ.
+ * Переменная нужна по делу (запасной профиль, отладка), запрещать её незачем —
+ * а вот удалять по ней что попало нельзя.
+ *
+ * Поэтому сначала читаем и убеждаемся, что внутри наша сессия. Не наша —
+ * оставляем на месте и говорим об этом: молчание тут выглядело бы как успешный
+ * выход, которого не было.
+ */
 export async function clearSession(): Promise<void> {
-  await rm(sessionPath(), { force: true });
+  const target = sessionPath();
+
+  let raw: string;
+  try {
+    raw = await readFile(target, "utf8");
+  } catch {
+    // Файла нет — выходить уже не из чего, это нормальный исход.
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+
+  if (!isSession(parsed)) {
+    throw new Error(
+      `${target} — не файл сессии, удалять его не станем. ` +
+        "Проверьте SURPRISE_SESSION_PATH: похоже, переменная указывает не туда.",
+    );
+  }
+
+  await rm(target, { force: true });
 }
 
 /** Через сколько лок считается брошенным (процесс убит, не успел прибрать). */

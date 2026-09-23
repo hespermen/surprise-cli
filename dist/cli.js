@@ -90,18 +90,28 @@ function anonHeaders() {
 function authHeaders(accessToken) {
   return { ...anonHeaders(), Authorization: `Bearer ${accessToken}` };
 }
+function clip(text) {
+  const trimmed = text.trim();
+  return trimmed.length <= MAX_ERROR_TEXT ? trimmed : `${trimmed.slice(0, MAX_ERROR_TEXT)}\u2026`;
+}
 function messageFromBody(body, fallback) {
-  if (typeof body === "string" && body.trim()) return body.trim();
+  if (typeof body === "string" && body.trim()) return clip(body);
   if (body && typeof body === "object") {
     const b = body;
     for (const key of ["error_description", "error", "message", "msg", "hint"]) {
       const value = b[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "string" && value.trim()) return clip(value);
     }
   }
   return fallback;
 }
 async function readBody(res) {
+  const length = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(length) && length > MAX_BODY_BYTES) {
+    throw new NetworkError(
+      `\u041E\u0442\u0432\u0435\u0442 \u0441\u043B\u0438\u0448\u043A\u043E\u043C \u0431\u043E\u043B\u044C\u0448\u043E\u0439 (${Math.round(length / 1024 / 1024)} \u041C\u0411). \u041D\u0430\u0448 API \u0441\u0442\u043E\u043B\u044C\u043A\u043E \u043D\u0435 \u043E\u0442\u0434\u0430\u0451\u0442.`
+    );
+  }
   const text = await res.text().catch(() => "");
   if (!text) return null;
   try {
@@ -183,7 +193,7 @@ function chunk(items, size = 100) {
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
 }
-var ApiError, NetworkError, DEFAULT_TIMEOUT_MS, RETRYABLE_STATUS;
+var ApiError, NetworkError, MAX_ERROR_TEXT, MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, RETRYABLE_STATUS;
 var init_http = __esm({
   "src/net/http.ts"() {
     "use strict";
@@ -208,6 +218,8 @@ var init_http = __esm({
         this.reason = reason;
       }
     };
+    MAX_ERROR_TEXT = 200;
+    MAX_BODY_BYTES = 4 * 1024 * 1024;
     DEFAULT_TIMEOUT_MS = 15e3;
     RETRYABLE_STATUS = /* @__PURE__ */ new Set([502, 503, 504]);
   }
@@ -636,7 +648,25 @@ async function writeSession(session) {
   }
 }
 async function clearSession() {
-  await rm(sessionPath(), { force: true });
+  const target = sessionPath();
+  let raw;
+  try {
+    raw = await readFile(target, "utf8");
+  } catch {
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+  if (!isSession(parsed)) {
+    throw new Error(
+      `${target} \u2014 \u043D\u0435 \u0444\u0430\u0439\u043B \u0441\u0435\u0441\u0441\u0438\u0438, \u0443\u0434\u0430\u043B\u044F\u0442\u044C \u0435\u0433\u043E \u043D\u0435 \u0441\u0442\u0430\u043D\u0435\u043C. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 SURPRISE_SESSION_PATH: \u043F\u043E\u0445\u043E\u0436\u0435, \u043F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u0430\u044F \u0443\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442 \u043D\u0435 \u0442\u0443\u0434\u0430.`
+    );
+  }
+  await rm(target, { force: true });
 }
 async function breakStaleLock(path) {
   try {
@@ -20043,10 +20073,10 @@ var init_output = __esm({
           transformers
         });
       }
-      clip(clip) {
+      clip(clip2) {
         this.operations.push({
           type: "clip",
-          clip
+          clip: clip2
         });
       }
       unclip() {
@@ -20080,40 +20110,40 @@ var init_output = __esm({
             const { text, transformers } = operation;
             let { x, y } = operation;
             let lines = text.split("\n");
-            const clip = clips.at(-1);
-            if (clip) {
-              const clipHorizontally = typeof clip?.x1 === "number" && typeof clip?.x2 === "number";
-              const clipVertically = typeof clip?.y1 === "number" && typeof clip?.y2 === "number";
+            const clip2 = clips.at(-1);
+            if (clip2) {
+              const clipHorizontally = typeof clip2?.x1 === "number" && typeof clip2?.x2 === "number";
+              const clipVertically = typeof clip2?.y1 === "number" && typeof clip2?.y2 === "number";
               if (clipHorizontally) {
                 const width2 = widestLine(text);
-                if (x + width2 < clip.x1 || x > clip.x2) {
+                if (x + width2 < clip2.x1 || x > clip2.x2) {
                   continue;
                 }
               }
               if (clipVertically) {
                 const height = lines.length;
-                if (y + height < clip.y1 || y > clip.y2) {
+                if (y + height < clip2.y1 || y > clip2.y2) {
                   continue;
                 }
               }
               if (clipHorizontally) {
                 lines = lines.map((line) => {
-                  const from = x < clip.x1 ? clip.x1 - x : 0;
+                  const from = x < clip2.x1 ? clip2.x1 - x : 0;
                   const width2 = stringWidth(line);
-                  const to = x + width2 > clip.x2 ? clip.x2 - x : width2;
+                  const to = x + width2 > clip2.x2 ? clip2.x2 - x : width2;
                   return sliceAnsi2(line, from, to);
                 });
-                if (x < clip.x1) {
-                  x = clip.x1;
+                if (x < clip2.x1) {
+                  x = clip2.x1;
                 }
               }
               if (clipVertically) {
-                const from = y < clip.y1 ? clip.y1 - y : 0;
+                const from = y < clip2.y1 ? clip2.y1 - y : 0;
                 const height = lines.length;
-                const to = y + height > clip.y2 ? clip.y2 - y : height;
+                const to = y + height > clip2.y2 ? clip2.y2 - y : height;
                 lines = lines.slice(from, to);
-                if (y < clip.y1) {
-                  y = clip.y1;
+                if (y < clip2.y1) {
+                  y = clip2.y1;
                 }
               }
             }
