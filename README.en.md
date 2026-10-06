@@ -10,10 +10,8 @@ curl -fsSL https://surprise.fm/cli | sh
 
 The player opens by itself. After that, run it with `surprise`.
 
-> **This package is not on npm yet.** The only sources are this repository and
-> `surprise.fm/cli`. If you find a package named `surprise-cli`, `surprise-fm`
-> or anything similar on npm, it is not ours — do not install it. The name
-> `surprise` on npm was taken long ago by an unrelated person.
+The official npm package is named `surprise-cli`. The name `surprise` on npm was
+taken long ago by an unrelated person and is not connected to us.
 
 The installer checks Node, removes an older version if there was one, and tells
 you about mpv. Reading it first is a sound habit — it is served as plain text for
@@ -27,13 +25,8 @@ Straight through npm works too, if you would rather not run a script from the
 network:
 
 ```bash
-npm i -g "$(npm pack -s github:hespermen/surprise-cli)"
+npm i -g surprise-cli
 ```
-
-That form is longer than the usual `npm i -g github:…` and it isn't fussiness: on
-npm 10.x the short one answers "added 1 package" and leaves an **empty** package
-directory — the command appears but won't run. The failure looks like success. On
-npm 11 and newer the short form is fine too.
 
 ## Installing
 
